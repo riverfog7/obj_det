@@ -86,3 +86,8 @@ explicit = true
 name = "pytorch-cu132"
 url = "https://download.pytorch.org/whl/cu132"
 explicit = true
+
+[dependency-groups]
+dev = [
+    "jupyterlab>=4.6.0",
+]
