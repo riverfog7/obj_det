@@ -272,7 +272,7 @@ class BaseSourceDataset(ABC):
             image_id=f"{self.key}:{split}:{source_id}",
             dataset=self.key,
             split=split,
-            image_path=self.resolve_path(image_path),
+            image_path=image_path,
             width=width,
             height=height,
             objects=objects,
