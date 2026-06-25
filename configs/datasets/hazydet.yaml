@@ -33,6 +33,7 @@ splits:
     is_synthetic: true
 
   real_world_train:
+    output_split: real_tr
     paths:
       images: real_world/train
       annotations: real_world/train_real.json
@@ -41,6 +42,7 @@ splits:
     is_synthetic: false
 
   real_world_test:
+    output_split: real_te
     paths:
       images: real_world/test
       annotations: real_world/test_real.json
