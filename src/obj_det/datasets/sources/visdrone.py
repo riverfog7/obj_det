@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Iterator
 
@@ -8,6 +9,9 @@ from PIL import Image
 from obj_det.datasets.models import ImageRecord, ObjectAnnotation
 
 from .base import BaseSourceDataset
+
+
+logger = logging.getLogger(__name__)
 
 
 VISDRONE_CATEGORIES = {
@@ -60,13 +64,26 @@ class VisDroneDetSourceDataset(BaseSourceDataset):
                 if not line:
                     continue
 
-                x, y, w, h, score, category_id, truncation, occlusion = (
-                    self._parse_annotation_line(
-                        line=line,
-                        annotation_path=annotation_path,
-                        line_number=line_number,
+                try:
+                    x, y, w, h, score, category_id, truncation, occlusion = (
+                        self._parse_annotation_line(
+                            line=line,
+                            annotation_path=annotation_path,
+                            line_number=line_number,
+                        )
                     )
-                )
+                except ValueError:
+                    logger.warning(
+                        "Skipping malformed VisDrone annotation: dataset=%s "
+                        "split=%s file=%s line=%s text=%s",
+                        self.key,
+                        split,
+                        annotation_path,
+                        line_number,
+                        line,
+                    )
+                    continue
+
                 native_label = VISDRONE_CATEGORIES[category_id]
 
                 obj = self.make_object(
@@ -85,6 +102,16 @@ class VisDroneDetSourceDataset(BaseSourceDataset):
                 )
                 if obj is not None:
                     objects.append(obj)
+
+            if not objects:
+                logger.warning(
+                    "VisDrone image has no valid objects after filtering: "
+                    "dataset=%s split=%s image=%s annotation=%s",
+                    self.key,
+                    split,
+                    image_path,
+                    annotation_path,
+                )
 
             yield self.make_record(
                 split=split,
