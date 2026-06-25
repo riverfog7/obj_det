@@ -50,6 +50,7 @@ class SourceDatasetConfig(SourceConfigModel):
 
     key: str
     root: Path
+    source_format: str
 
     splits: dict[str, SourceSplitConfig]
 
@@ -74,6 +75,14 @@ class SourceDatasetConfig(SourceConfigModel):
         value = value.strip().lower()
         if not value:
             raise ValueError("dataset key cannot be empty")
+        return value
+
+    @field_validator("source_format")
+    @classmethod
+    def validate_source_format(cls, value: str) -> str:
+        value = value.strip().lower()
+        if not value:
+            raise ValueError("source_format cannot be empty")
         return value
 
     @field_validator("default_condition", "default_domain")
