@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 from typing import Any, Iterator
 
@@ -10,6 +11,9 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from obj_det.datasets.models import ImageRecord, ObjectAnnotation
 
 from .base import BaseSourceDataset
+
+
+logger = logging.getLogger(__name__)
 
 
 class _CocoModel(BaseModel):
@@ -125,8 +129,30 @@ class CocoSourceDataset(BaseSourceDataset):
                         "source_area": annotation.area,
                     },
                 )
-                if obj is not None:
-                    objects.append(obj)
+                if obj is None:
+                    logger.warning(
+                        "Skipping invalid COCO annotation: dataset=%s split=%s "
+                        "image_id=%s file_name=%s annotation_id=%s bbox=%s",
+                        self.key,
+                        split,
+                        source_image_id,
+                        source_file_name,
+                        annotation.id,
+                        annotation.bbox,
+                    )
+                    continue
+
+                objects.append(obj)
+
+            if not objects:
+                logger.warning(
+                    "COCO image has no valid objects after filtering: "
+                    "dataset=%s split=%s image_id=%s file_name=%s",
+                    self.key,
+                    split,
+                    source_image_id,
+                    source_file_name,
+                )
 
             yield self.make_record(
                 split=split,

@@ -174,9 +174,9 @@ class BaseSourceDataset(ABC):
         try:
             bbox = BBox.from_xywh(list(xywh))
         except ValueError:
-            if self.cfg.bbox_policy == "drop":
-                return None
-            raise
+            if self.cfg.bbox_policy == "strict":
+                raise
+            return None
 
         if bbox.within_image(image_width, image_height):
             return bbox
