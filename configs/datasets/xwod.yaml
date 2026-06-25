@@ -1,0 +1,43 @@
+key: xwod
+root: source_datasets/xwod
+source_format: yolo
+
+default_condition: mixed
+default_domain: road
+default_is_synthetic: false
+bbox_policy: clip
+
+splits:
+  train:
+    paths:
+      images: train/images
+      labels: train/labels
+    condition: mixed
+    domain: road
+    is_synthetic: false
+
+  val:
+    paths:
+      images: valid/images
+      labels: valid/labels
+    condition: mixed
+    domain: road
+    is_synthetic: false
+
+  test:
+    paths:
+      images: test/images
+      labels: test/labels
+    condition: mixed
+    domain: road
+    is_synthetic: false
+
+class_map:
+  person: person
+  car: car
+  truck: truck
+  motorcycle: motorcycle
+  bus: bus
+  bike: bicycle
+
+ignore_labels: []
