@@ -4,10 +4,12 @@ from obj_det.datasets.models.source_config import SourceDatasetConfig
 
 from .base import BaseSourceDataset
 from .coco import CocoSourceDataset
+from .visdrone import VisDroneDetSourceDataset
 
 
 SOURCE_FORMATS: dict[str, type[BaseSourceDataset]] = {
     "coco": CocoSourceDataset,
+    "visdrone_det": VisDroneDetSourceDataset,
 }
 
 
