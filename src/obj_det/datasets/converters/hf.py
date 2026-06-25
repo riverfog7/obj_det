@@ -52,26 +52,35 @@ def convert_config_to_dataset_dict(
     cfg = SourceDatasetConfig.model_validate(data)
     source = source_from_config(cfg)
     split_names = list(splits) if splits is not None else source.splits
+    output_splits: dict[str, str] = {}
+
     for split in split_names:
         source.require_split(split)
+        output_split = source.split_cfg(split).output_split or split
+        if output_split in output_splits:
+            raise ValueError(
+                f"Duplicate output split {output_split!r} for source splits "
+                f"{output_splits[output_split]!r} and {split!r}"
+            )
+        output_splits[output_split] = split
 
     datasets = DatasetDict()
-    for split in split_names:
+    for output_split, split in output_splits.items():
 
         def rows(split: str = split):
             for record in source.iter_records(split):
                 yield _record_to_row(record)
 
         try:
-            datasets[split] = Dataset.from_generator(
+            datasets[output_split] = Dataset.from_generator(
                 rows,
                 features=HF_FEATURES,
-                split=split,
+                split=output_split,
             )
         except ValueError as exc:
             if "corresponds to no data" not in str(exc):
                 raise
-            datasets[split] = Dataset.from_dict(
+            datasets[output_split] = Dataset.from_dict(
                 {column: [] for column in HF_FEATURES},
                 features=HF_FEATURES,
             )

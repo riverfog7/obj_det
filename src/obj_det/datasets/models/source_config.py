@@ -35,12 +35,25 @@ class SourceSplitConfig(SourceConfigModel):
     """
 
     paths: dict[str, Path] = Field(default_factory=dict)
+    output_split: str | None = None
 
     condition: str | None = None
     domain: str | None = None
     is_synthetic: bool | None = None
 
     meta: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("output_split")
+    @classmethod
+    def validate_output_split(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+
+        value = value.strip()
+        if not value:
+            raise ValueError("output_split cannot be empty")
+
+        return value
 
 
 class SourceDatasetConfig(SourceConfigModel):
