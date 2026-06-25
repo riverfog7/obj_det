@@ -8,3 +8,10 @@ wheels/
 
 # Virtual environments
 .venv
+
+source_datasets/
+datasets/
+!src/obj_det/datasets/
+!configs/datasets/
+.cache/
+cache/
