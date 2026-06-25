@@ -186,28 +186,47 @@ class BaseSourceDataset(ABC):
             x, y, width, height
         absolute pixels.
         """
-        try:
-            bbox = BBox.from_xywh(list(xywh))
-        except ValueError:
+        if len(xywh) != 4:
+            if self.cfg.bbox_policy != "strict":
+                return None
+            raise ValueError(f"Expected bbox with 4 values, got {xywh}")
+
+        x, y, w, h = map(float, xywh)
+
+        if w <= 0 or h <= 0:
             if self.cfg.bbox_policy == "strict":
-                raise
+                return BBox.from_xywh([x, y, w, h])
             return None
 
-        if bbox.within_image(image_width, image_height):
-            return bbox
+        x1 = x
+        y1 = y
+        x2 = x + w
+        y2 = y + h
 
-        if self.cfg.bbox_policy == "strict":
-            raise ValueError(
-                f"Bbox {bbox.xywh()} exceeds image bounds {image_width}x{image_height}"
-            )
+        out_of_bounds = x1 < 0 or y1 < 0 or x2 > image_width or y2 > image_height
+        if out_of_bounds:
+            if self.cfg.bbox_policy == "strict":
+                raise ValueError(
+                    f"Bbox {xywh} exceeds image bounds {image_width}x{image_height}"
+                )
 
-        if self.cfg.bbox_policy == "drop":
-            return None
+            if self.cfg.bbox_policy == "drop":
+                return None
 
-        if self.cfg.bbox_policy == "clip":
-            return bbox.clipped(image_width, image_height)
+            if self.cfg.bbox_policy == "clip":
+                x1 = max(0.0, min(x1, float(image_width)))
+                y1 = max(0.0, min(y1, float(image_height)))
+                x2 = max(0.0, min(x2, float(image_width)))
+                y2 = max(0.0, min(y2, float(image_height)))
 
-        raise ValueError(f"Unknown bbox_policy: {self.cfg.bbox_policy}")
+                if x2 <= x1 or y2 <= y1:
+                    return None
+
+                return BBox.from_xyxy([x1, y1, x2, y2])
+
+            raise ValueError(f"Unknown bbox_policy: {self.cfg.bbox_policy}")
+
+        return BBox.from_xywh([x, y, w, h])
 
     # ------------------------------------------------------------------
     # Object / record helpers
