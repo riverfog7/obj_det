@@ -103,16 +103,6 @@ class VisDroneDetSourceDataset(BaseSourceDataset):
                 if obj is not None:
                     objects.append(obj)
 
-            if not objects:
-                logger.warning(
-                    "VisDrone image has no valid objects after filtering: "
-                    "dataset=%s split=%s image=%s annotation=%s",
-                    self.key,
-                    split,
-                    image_path,
-                    annotation_path,
-                )
-
             yield self.make_record(
                 split=split,
                 source_id=image_path.stem,

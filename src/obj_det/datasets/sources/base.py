@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import logging
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any, Iterator, Sequence
 
 from obj_det.datasets.models import BBox, ImageRecord, ObjectAnnotation
 from obj_det.datasets.models.source_config import SourceDatasetConfig, SourceSplitConfig
+
+
+logger = logging.getLogger(__name__)
 
 
 class BaseSourceDataset(ABC):
@@ -71,6 +75,17 @@ class BaseSourceDataset(ABC):
 
             if validate_geometry:
                 record.assert_valid_geometry()
+
+            if not record.valid_objects(mode="native"):
+                logger.warning(
+                    "Skipping image with no valid objects: "
+                    "dataset=%s split=%s image_id=%s image_path=%s",
+                    record.dataset,
+                    record.split,
+                    record.image_id,
+                    record.image_path,
+                )
+                continue
 
             yield record
 

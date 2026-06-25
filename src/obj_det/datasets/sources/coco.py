@@ -167,16 +167,6 @@ class CocoSourceDataset(BaseSourceDataset):
 
                 objects.append(obj)
 
-            if not objects:
-                logger.warning(
-                    "COCO image has no valid objects after filtering: "
-                    "dataset=%s split=%s image_id=%s file_name=%s",
-                    self.key,
-                    split,
-                    source_image_id,
-                    source_file_name,
-                )
-
             yield self.make_record(
                 split=split,
                 source_id=source_image_id,
