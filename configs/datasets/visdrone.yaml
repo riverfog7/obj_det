@@ -1,0 +1,49 @@
+key: visdrone
+root: source_datasets/visdrone
+source_format: visdrone_det
+
+default_condition: unknown
+default_domain: aerial
+default_is_synthetic: false
+bbox_policy: clip
+
+splits:
+  train:
+    paths:
+      images: VisDrone2019-DET-train/images
+      annotations: VisDrone2019-DET-train/annotations
+    condition: unknown
+    domain: aerial
+    is_synthetic: false
+
+  val:
+    paths:
+      images: VisDrone2019-DET-val/images
+      annotations: VisDrone2019-DET-val/annotations
+    condition: unknown
+    domain: aerial
+    is_synthetic: false
+
+  test:
+    paths:
+      images: VisDrone2019-DET-test-dev/images
+      annotations: VisDrone2019-DET-test-dev/annotations
+    condition: unknown
+    domain: aerial
+    is_synthetic: false
+
+class_map:
+  pedestrian: person
+  people: person
+  bicycle: bicycle
+  car: car
+  van: car
+  truck: truck
+  tricycle: motorcycle
+  awning-tricycle: motorcycle
+  bus: bus
+  motor: motorcycle
+  ignored_region:
+  others:
+
+ignore_labels: []
