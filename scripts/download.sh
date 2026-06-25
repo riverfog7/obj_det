@@ -17,6 +17,9 @@ VISDRONE_TRAIN_ZIP="VisDrone2019-DET-train.zip"
 VISDRONE_VAL_ZIP="VisDrone2019-DET-val.zip"
 VISDRONE_TEST_ZIP="VisDrone2019-DET-test-dev.zip"
 
+XWOD_SAVE_PATH="$DATASET_SAVE_PATH/xwod"
+XWOD_DATASET_ID="kuantinglai/exwod"
+
 rm -rf "$DATASET_SAVE_PATH"
 
 echo "Downloading hazydet dataset..."
@@ -54,3 +57,8 @@ rm "$VISDRONE_TEST_ZIP"
 rm "$VISDRONE_TRAIN_ZIP"
 rm "$VISDRONE_VAL_ZIP"
 popd
+
+echo "Download and extracting xwod dataset..."
+uv tool run kaggle datasets download "$XWOD_DATASET_ID" --unzip -p "$XWOD_SAVE_PATH"
+mv -r "$XWOD_SAVE_PATH/dataset/*" "$XWOD_SAVE_PATH"
+rm -rf "$XWOD_SAVE_PATH/dataset"
