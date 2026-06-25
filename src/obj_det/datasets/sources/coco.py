@@ -104,7 +104,30 @@ class CocoSourceDataset(BaseSourceDataset):
                     f"file_name='{source_file_name}': {image_path}"
                 )
 
-            width, height = self._image_size(image_info, image_path)
+            with Image.open(image_path) as image:
+                width, height = image.size
+
+            if (
+                image_info.width is not None
+                and image_info.height is not None
+                and image_info.width > 0
+                and image_info.height > 0
+                and (image_info.width, image_info.height) != (width, height)
+            ):
+                logger.warning(
+                    "Skipping COCO image with mismatched dimensions: "
+                    "dataset=%s split=%s image_id=%s file_name=%s "
+                    "json_size=%sx%s actual_size=%sx%s",
+                    self.key,
+                    split,
+                    source_image_id,
+                    source_file_name,
+                    image_info.width,
+                    image_info.height,
+                    width,
+                    height,
+                )
+                continue
 
             objects: list[ObjectAnnotation] = []
             for annotation in annotations_by_image_id.get(str(source_image_id), []):
@@ -168,10 +191,3 @@ class CocoSourceDataset(BaseSourceDataset):
                 },
             )
 
-    def _image_size(self, image_info: _CocoImage, image_path: Path) -> tuple[int, int]:
-        if image_info.width is not None and image_info.height is not None:
-            if image_info.width > 0 and image_info.height > 0:
-                return image_info.width, image_info.height
-
-        with Image.open(image_path) as image:
-            return image.size

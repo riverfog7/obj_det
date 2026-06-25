@@ -62,11 +62,19 @@ def convert_config_to_dataset_dict(
             for record in source.iter_records(split):
                 yield _record_to_row(record)
 
-        datasets[split] = Dataset.from_generator(
-            rows,
-            features=HF_FEATURES,
-            split=split,
-        )
+        try:
+            datasets[split] = Dataset.from_generator(
+                rows,
+                features=HF_FEATURES,
+                split=split,
+            )
+        except ValueError as exc:
+            if "corresponds to no data" not in str(exc):
+                raise
+            datasets[split] = Dataset.from_dict(
+                {column: [] for column in HF_FEATURES},
+                features=HF_FEATURES,
+            )
 
     return datasets
 
