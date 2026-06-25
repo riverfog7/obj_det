@@ -1,0 +1,47 @@
+key: hazydet_clear
+root: source_datasets/hazydet
+source_format: coco
+
+default_condition: clear
+default_domain: aerial
+default_is_synthetic: false
+bbox_policy: clip
+
+splits:
+  train:
+    paths:
+      images: train/images
+      annotations: train/train_coco.json
+    condition: clear
+    domain: aerial
+    is_synthetic: false
+
+  val:
+    paths:
+      images: val/images
+      annotations: val/val_coco.json
+    condition: clear
+    domain: aerial
+    is_synthetic: false
+
+  test:
+    paths:
+      images: test/images
+      annotations: test/test_coco.json
+    condition: clear
+    domain: aerial
+    is_synthetic: false
+
+class_map:
+  pedestrian: person
+  people: person
+  bicycle: bicycle
+  car: car
+  van: car
+  truck: truck
+  tricycle: motorcycle
+  awning-tricycle: motorcycle
+  bus: bus
+  motor: motorcycle
+
+ignore_labels: []
