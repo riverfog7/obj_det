@@ -1,0 +1,104 @@
+from __future__ import annotations
+
+import json
+from pathlib import Path
+from typing import Any, Iterable
+
+import yaml
+from datasets import Dataset, DatasetDict, Features, Image, List, Value
+
+from obj_det.datasets.models import ImageRecord
+from obj_det.datasets.models.source_config import SourceDatasetConfig
+from obj_det.datasets.sources import source_from_config
+
+
+HF_FEATURES = Features(
+    {
+        "image": Image(decode=False),
+        "image_id": Value("string"),
+        "dataset": Value("string"),
+        "split": Value("string"),
+        "image_path": Value("string"),
+        "width": Value("int32"),
+        "height": Value("int32"),
+        "condition": Value("string"),
+        "domain": Value("string"),
+        "is_synthetic": Value("bool"),
+        "objects": List(
+            {
+                "bbox": List(Value("float32"), length=4),
+                "native_label": Value("string"),
+                "native_label_id": Value("string"),
+                "meta_label": Value("string"),
+                "ignore": Value("bool"),
+                "iscrowd": Value("bool"),
+                "meta_json": Value("string"),
+            }
+        ),
+        "meta_json": Value("string"),
+    }
+)
+
+
+def convert_config_to_dataset_dict(
+    config_path: Path,
+    *,
+    splits: Iterable[str] | None = None,
+) -> DatasetDict:
+    data = yaml.safe_load(config_path.read_text())
+    if not isinstance(data, dict):
+        raise ValueError(f"Expected dataset config mapping: {config_path}")
+
+    cfg = SourceDatasetConfig.model_validate(data)
+    source = source_from_config(cfg)
+    split_names = list(splits) if splits is not None else source.splits
+    for split in split_names:
+        source.require_split(split)
+
+    datasets = DatasetDict()
+    for split in split_names:
+
+        def rows(split: str = split):
+            for record in source.iter_records(split):
+                yield _record_to_row(record)
+
+        datasets[split] = Dataset.from_generator(
+            rows,
+            features=HF_FEATURES,
+            split=split,
+        )
+
+    return datasets
+
+
+def _record_to_row(record: ImageRecord) -> dict[str, Any]:
+    return {
+        "image": {
+            "bytes": record.image_path.read_bytes(),
+            "path": str(record.image_path),
+        },
+        "image_id": record.image_id,
+        "dataset": record.dataset,
+        "split": record.split,
+        "image_path": str(record.image_path),
+        "width": record.width,
+        "height": record.height,
+        "condition": record.condition,
+        "domain": record.domain,
+        "is_synthetic": record.is_synthetic,
+        "objects": [
+            {
+                "bbox": list(obj.bbox.xywh()),
+                "native_label": obj.native_label,
+                "native_label_id": None
+                if obj.native_label_id is None
+                else str(obj.native_label_id),
+                "meta_label": obj.meta_label,
+                "ignore": obj.ignore,
+                "iscrowd": obj.iscrowd,
+                "meta_json": json.dumps(obj.meta, default=str, sort_keys=True),
+            }
+            for obj in record.objects
+        ],
+        "meta_json": json.dumps(record.meta, default=str, sort_keys=True),
+    }
