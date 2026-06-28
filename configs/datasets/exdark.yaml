@@ -1,0 +1,56 @@
+key: exdark
+root: source_datasets/exdark
+source_format: exdark
+
+default_condition: low_light
+default_domain: general
+default_is_synthetic: false
+bbox_policy: clip
+
+splits:
+  train:
+    paths:
+      images: ExDark
+      annotations: ExDark_Annno
+      imageclasslist: imageclasslist.txt
+    condition: low_light
+    domain: general
+    is_synthetic: false
+
+  val:
+    paths:
+      images: ExDark
+      annotations: ExDark_Annno
+      imageclasslist: imageclasslist.txt
+    condition: low_light
+    domain: general
+    is_synthetic: false
+
+  test:
+    paths:
+      images: ExDark
+      annotations: ExDark_Annno
+      imageclasslist: imageclasslist.txt
+    condition: low_light
+    domain: general
+    is_synthetic: false
+
+class_map:
+  Bicycle: bicycle
+  Boat: boat
+  Bottle: bottle
+  Bus: bus
+  Car: car
+  Cat: cat
+  Chair: chair
+  Cup: cup
+  Dog: dog
+  Motorbike: motorcycle
+  People: person
+  Table: table
+
+ignore_labels: []
+
+meta:
+  license: non-commercial research only
+  homepage: https://github.com/cs-chan/Exclusively-Dark-Image-Dataset

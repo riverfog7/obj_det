@@ -12,6 +12,7 @@ raw dataset files in source_datasets/
 Supported source formats:
 
 - `coco`
+- `exdark`
 - `visdrone_det`
 - `yolo`
 - `yolo_noyml`
@@ -36,7 +37,7 @@ There is one helper script:
 bash scripts/download.sh
 ```
 
-It downloads and extracts HazyDet, VisDrone, XWOD, and DAWN into:
+It downloads and extracts HazyDet, VisDrone, XWOD, DAWN, and ExDark into:
 
 ```text
 source_datasets/
@@ -64,6 +65,7 @@ configs/datasets/hazydet_clear.yaml
 configs/datasets/visdrone.yaml
 configs/datasets/xwod.yaml
 configs/datasets/dawn.yaml
+configs/datasets/exdark.yaml
 ```
 
 A config describes where the raw dataset is and how to interpret it.
@@ -73,7 +75,7 @@ Important fields:
 ```yaml
 key: xwod                     # dataset key used in output records
 root: source_datasets/xwod    # raw dataset root
-source_format: yolo           # coco | visdrone_det | yolo | yolo_noyml
+source_format: yolo           # coco | exdark | visdrone_det | yolo | yolo_noyml
 
 bbox_policy: clip             # strict | clip | drop
 
@@ -102,12 +104,16 @@ Split path keys depend on the source format:
 - VisDrone configs use `images` and `annotations`.
 - YOLO configs use `images` and `labels`; class names come from `root/data.yaml`.
 - `yolo_noyml` configs use `images` and `labels`; class names come from `class_names`.
+- ExDark configs use `images`, `annotations`, and `imageclasslist`.
 
 DAWN currently has one source split:
 
 ```text
 full
 ```
+
+ExDark uses the official `train`, `val`, and `test` split ids from
+`imageclasslist.txt`. Upstream marks ExDark as non-commercial research use.
 
 Optional split field:
 

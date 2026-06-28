@@ -4,6 +4,7 @@ from obj_det.datasets.models.source_config import SourceDatasetConfig
 
 from .base import BaseSourceDataset
 from .coco import CocoSourceDataset
+from .exdark import ExDarkSourceDataset
 from .visdrone import VisDroneDetSourceDataset
 from .yolo import YoloSourceDataset
 from .yolo_noyml import YoloNoYamlSourceDataset
@@ -11,6 +12,7 @@ from .yolo_noyml import YoloNoYamlSourceDataset
 
 SOURCE_FORMATS: dict[str, type[BaseSourceDataset]] = {
     "coco": CocoSourceDataset,
+    "exdark": ExDarkSourceDataset,
     "visdrone_det": VisDroneDetSourceDataset,
     "yolo": YoloSourceDataset,
     "yolo_noyml": YoloNoYamlSourceDataset,
