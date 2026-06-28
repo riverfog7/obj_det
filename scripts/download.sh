@@ -23,6 +23,12 @@ XWOD_DATASET_ID="kuantinglai/exwod"
 DAWN_SAVE_PATH="$DATASET_SAVE_PATH/dawn"
 DAWN_DATASET_ID="shuvoalok/dawn-dataset"
 
+EXDARK_SAVE_PATH="$DATASET_SAVE_PATH/exdark"
+EXDARK_IMAGES_ID="1BHmPgu8EsHoFDDkMGLVoXIlCth2dW6Yx"
+EXDARK_ANNOTATIONS_ID="1P3iO3UYn7KoBi5jiUkogJq96N6maZS1i"
+EXDARK_IMAGES_ZIP="exdark_images.zip"
+EXDARK_ANNOTATIONS_ZIP="exdark_annotations.zip"
+
 rm -rf "$DATASET_SAVE_PATH"
 
 echo "Downloading hazydet dataset..."
@@ -68,3 +74,20 @@ rm -rf "$XWOD_SAVE_PATH/dataset"
 
 echo "Downloading and extracting dawn dataset..."
 uv tool run kaggle datasets download "$DAWN_DATASET_ID" --unzip -p "$DAWN_SAVE_PATH"
+
+echo "Downloading exdark dataset..."
+mkdir -p "$EXDARK_SAVE_PATH"
+uv tool run gdown "$EXDARK_IMAGES_ID" -O "$EXDARK_SAVE_PATH/$EXDARK_IMAGES_ZIP"
+uv tool run gdown "$EXDARK_ANNOTATIONS_ID" -O "$EXDARK_SAVE_PATH/$EXDARK_ANNOTATIONS_ZIP"
+curl -LfsS \
+  https://raw.githubusercontent.com/cs-chan/Exclusively-Dark-Image-Dataset/master/Groundtruth/imageclasslist.txt \
+  -o "$EXDARK_SAVE_PATH/imageclasslist.txt"
+
+echo "Extracting exdark dataset..."
+pushd "$EXDARK_SAVE_PATH"
+unzip -q "$EXDARK_IMAGES_ZIP"
+unzip -q "$EXDARK_ANNOTATIONS_ZIP"
+rm "$EXDARK_IMAGES_ZIP"
+rm "$EXDARK_ANNOTATIONS_ZIP"
+rm -rf __MACOSX
+popd
