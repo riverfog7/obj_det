@@ -20,6 +20,9 @@ VISDRONE_TEST_ZIP="VisDrone2019-DET-test-dev.zip"
 XWOD_SAVE_PATH="$DATASET_SAVE_PATH/xwod"
 XWOD_DATASET_ID="kuantinglai/exwod"
 
+DAWN_SAVE_PATH="$DATASET_SAVE_PATH/dawn"
+DAWN_DATASET_ID="shuvoalok/dawn-dataset"
+
 rm -rf "$DATASET_SAVE_PATH"
 
 echo "Downloading hazydet dataset..."
@@ -62,3 +65,6 @@ echo "Download and extracting xwod dataset..."
 uv tool run kaggle datasets download "$XWOD_DATASET_ID" --unzip -p "$XWOD_SAVE_PATH"
 mv "$XWOD_SAVE_PATH"/dataset/* "$XWOD_SAVE_PATH"
 rm -rf "$XWOD_SAVE_PATH/dataset"
+
+echo "Downloading and extracting dawn dataset..."
+uv tool run kaggle datasets download "$DAWN_DATASET_ID" --unzip -p "$DAWN_SAVE_PATH"
