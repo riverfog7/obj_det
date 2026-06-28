@@ -60,5 +60,5 @@ popd
 
 echo "Download and extracting xwod dataset..."
 uv tool run kaggle datasets download "$XWOD_DATASET_ID" --unzip -p "$XWOD_SAVE_PATH"
-mv -r "$XWOD_SAVE_PATH/dataset/*" "$XWOD_SAVE_PATH"
+mv "$XWOD_SAVE_PATH"/dataset/* "$XWOD_SAVE_PATH"
 rm -rf "$XWOD_SAVE_PATH/dataset"
