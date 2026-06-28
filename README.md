@@ -14,6 +14,7 @@ Supported source formats:
 - `coco`
 - `visdrone_det`
 - `yolo`
+- `yolo_noyml`
 
 ## Setup
 
@@ -35,7 +36,7 @@ There is one helper script:
 bash scripts/download.sh
 ```
 
-It downloads and extracts HazyDet, VisDrone, and XWOD into:
+It downloads and extracts HazyDet, VisDrone, XWOD, and DAWN into:
 
 ```text
 source_datasets/
@@ -62,6 +63,7 @@ configs/datasets/hazydet.yaml
 configs/datasets/hazydet_clear.yaml
 configs/datasets/visdrone.yaml
 configs/datasets/xwod.yaml
+configs/datasets/dawn.yaml
 ```
 
 A config describes where the raw dataset is and how to interpret it.
@@ -71,7 +73,7 @@ Important fields:
 ```yaml
 key: xwod                     # dataset key used in output records
 root: source_datasets/xwod    # raw dataset root
-source_format: yolo           # coco | visdrone_det | yolo
+source_format: yolo           # coco | visdrone_det | yolo | yolo_noyml
 
 bbox_policy: clip             # strict | clip | drop
 
@@ -99,6 +101,13 @@ Split path keys depend on the source format:
 - COCO configs use `images` and `annotations`.
 - VisDrone configs use `images` and `annotations`.
 - YOLO configs use `images` and `labels`; class names come from `root/data.yaml`.
+- `yolo_noyml` configs use `images` and `labels`; class names come from `class_names`.
+
+DAWN currently has one source split:
+
+```text
+full
+```
 
 Optional split field:
 

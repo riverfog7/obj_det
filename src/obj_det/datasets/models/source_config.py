@@ -78,6 +78,9 @@ class SourceDatasetConfig(SourceConfigModel):
     # Labels to completely drop during import.
     ignore_labels: set[str] = Field(default_factory=set)
 
+    # YOLO class id -> native label. If absent, YOLO sources read root/data.yaml.
+    class_names: dict[int, str] | None = None
+
     bbox_policy: BBoxPolicy = "strict"
 
     meta: dict[str, Any] = Field(default_factory=dict)
@@ -131,5 +134,35 @@ class SourceDatasetConfig(SourceConfigModel):
             if not label:
                 raise ValueError("ignore_labels cannot contain empty labels")
             normalized.add(label)
+
+        return normalized
+
+    @field_validator("class_names", mode="before")
+    @classmethod
+    def normalize_class_names(cls, value: Any) -> dict[int, str] | None:
+        if value is None:
+            return None
+
+        if isinstance(value, list):
+            items = enumerate(value)
+        elif isinstance(value, dict):
+            items = value.items()
+        else:
+            raise TypeError("class_names must be a list or mapping")
+
+        normalized: dict[int, str] = {}
+        for raw_id, raw_name in items:
+            class_id = int(raw_id)
+            if class_id < 0:
+                raise ValueError("class_names ids must be non-negative")
+
+            name = str(raw_name).strip()
+            if not name:
+                raise ValueError("class_names cannot contain empty labels")
+
+            normalized[class_id] = name
+
+        if not normalized:
+            raise ValueError("class_names cannot be empty")
 
         return normalized

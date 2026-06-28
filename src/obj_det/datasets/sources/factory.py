@@ -6,12 +6,14 @@ from .base import BaseSourceDataset
 from .coco import CocoSourceDataset
 from .visdrone import VisDroneDetSourceDataset
 from .yolo import YoloSourceDataset
+from .yolo_noyml import YoloNoYamlSourceDataset
 
 
 SOURCE_FORMATS: dict[str, type[BaseSourceDataset]] = {
     "coco": CocoSourceDataset,
     "visdrone_det": VisDroneDetSourceDataset,
     "yolo": YoloSourceDataset,
+    "yolo_noyml": YoloNoYamlSourceDataset,
 }
 
 
