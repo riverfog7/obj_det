@@ -1,36 +1,28 @@
-key: hazydet
+key: hazydet_real
 root: source_datasets/hazydet
 source_format: coco
 
 default_condition: haze
 default_domain: aerial
-default_is_synthetic:
+default_is_synthetic: false
 bbox_policy: clip
 
 splits:
   train:
     paths:
-      images: train/hazy_images
-      annotations: train/train_coco.json
+      images: real_world/train
+      annotations: real_world/train_real.json
     condition: haze
     domain: aerial
-    is_synthetic: true
-
-  val:
-    paths:
-      images: val/hazy_images
-      annotations: val/val_coco.json
-    condition: haze
-    domain: aerial
-    is_synthetic: true
+    is_synthetic: false
 
   test:
     paths:
-      images: test/hazy_images
-      annotations: test/test_coco.json
+      images: real_world/test
+      annotations: real_world/test_real.json
     condition: haze
     domain: aerial
-    is_synthetic: true
+    is_synthetic: false
 
 class_map:
   pedestrian: person
@@ -45,4 +37,3 @@ class_map:
   motor: motorcycle
 
 ignore_labels: []
-
