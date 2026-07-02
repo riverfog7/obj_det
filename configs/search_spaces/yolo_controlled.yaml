@@ -1,0 +1,18 @@
+params:
+  lr0:
+    type: float
+    low: 0.001
+    high: 0.01
+    log: true
+  weight_decay:
+    type: categorical
+    choices: [0.0001, 0.0005, 0.001]
+  momentum:
+    type: categorical
+    choices: [0.9, 0.937]
+  warmup_epochs:
+    type: categorical
+    choices: [0, 3, 5]
+  cos_lr:
+    type: categorical
+    choices: [true, false]

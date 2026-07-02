@@ -272,3 +272,29 @@ Optional backend smoke tests are available with:
 ```bash
 OBJ_DET_RUN_BACKEND_SMOKE=1 uv run python -m unittest tests.models.test_backend_smoke
 ```
+
+## Model CLI
+
+Model runs can also be driven by YAML configs under `configs/experiments/`.
+The model CLI only loads converted Hugging Face datasets from disk.
+
+```bash
+uv run obj-det models train configs/experiments/yolo11n_hazydet_controlled.yaml
+
+uv run obj-det models evaluate configs/experiments/yolo11n_hazydet_controlled.yaml \
+  --artifact runs/yolo11n/hazydet/controlled/artifact.json \
+  --split test
+
+uv run obj-det models optimize configs/experiments/yolo11n_hazydet_controlled.yaml
+
+uv run obj-det models final configs/experiments/yolo11n_hazydet_controlled.yaml \
+  --best-trial runs/hpo/yolo11n_hazydet_controlled/best_trial.json
+```
+
+Use `model_file` and `search_space_file` when you want reusable configs:
+
+```text
+configs/models/
+configs/search_spaces/
+configs/experiments/
+```

@@ -52,7 +52,7 @@ class BestTrial(ModelSchema):
     meta: dict[str, Any] = Field(default_factory=dict)
 
 
-class     TuningResult(ModelSchema):
+class TuningResult(ModelSchema):
     study_name: str
     best_trial: BestTrial | None = None
     trials: list[TrialResult] = Field(default_factory=list)

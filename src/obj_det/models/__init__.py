@@ -1,6 +1,9 @@
 from .schemas import (
+    DatasetRef,
     EvalConfig,
     EvalResult,
+    ExperimentConfig,
+    FinalConfig,
     ModelArtifact,
     ModelConfig,
     PredictionObject,
@@ -13,8 +16,11 @@ from .schemas import (
 )
 
 __all__ = [
+    "DatasetRef",
     "EvalConfig",
     "EvalResult",
+    "ExperimentConfig",
+    "FinalConfig",
     "ModelArtifact",
     "ModelConfig",
     "PredictionObject",

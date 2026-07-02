@@ -1,0 +1,5 @@
+key: yolo11n
+backend: ultralytics
+model_name_or_path: yolo11n.pt
+params:
+  task: detect
