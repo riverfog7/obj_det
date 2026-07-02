@@ -205,3 +205,70 @@ ignore
 iscrowd
 meta_json
 ```
+
+## Model training API
+
+The model layer consumes only converted Hugging Face datasets:
+
+```text
+HF DatasetDict
+    -> row parser
+    -> shared preprocessing / augmentation
+    -> model adapter
+    -> canonical predictions
+    -> shared evaluator
+    -> optional tuning runner
+```
+
+It does not parse raw dataset folders, COCO JSON, YOLO label files, VisDrone TXT files, or other source formats.
+Raw dataset parsing belongs only in `obj_det.datasets`.
+
+Minimal Python usage:
+
+```python
+from datasets import load_from_disk
+
+from obj_det.models.adapters.factory import model_adapter_from_config
+from obj_det.models.schemas import EvalConfig, ModelConfig, TrainConfig
+
+hf_ds = load_from_disk("datasets/hazydet")
+
+model_cfg = ModelConfig(
+    key="fasterrcnn_r50",
+    backend="torchvision",
+    model_name_or_path="fasterrcnn_resnet50_fpn",
+)
+adapter = model_adapter_from_config(model_cfg)
+
+train_cfg = TrainConfig(
+    run_key="fasterrcnn_hazydet_seed0",
+    classes=["person", "bicycle", "motorcycle", "car", "bus", "truck"],
+    label_mode="meta",
+    output_dir="runs/fasterrcnn/hazydet/seed0",
+    image_size=640,
+    max_epochs=50,
+    effective_batch_size=16,
+)
+
+eval_cfg = EvalConfig(
+    classes=train_cfg.classes,
+    label_mode=train_cfg.label_mode,
+    image_size=train_cfg.image_size,
+)
+
+artifact = adapter.train(hf_ds["train"], hf_ds["validation"], train_cfg)
+result = adapter.evaluate(hf_ds["test"], artifact, eval_cfg)
+print(result.primary_metric, result.primary_metric_value)
+```
+
+Current backend status:
+
+- `torchvision`: Faster R-CNN adapter with train/predict/evaluate support.
+- `hf_trainer`: Transformers `Trainer` adapter with COCO-style image-processor targets and canonical predictions.
+- `ultralytics`: HF-backed Ultralytics `DetectionTrainer` adapter; no YOLO folder export is used.
+
+Optional backend smoke tests are available with:
+
+```bash
+OBJ_DET_RUN_BACKEND_SMOKE=1 uv run python -m unittest tests.models.test_backend_smoke
+```
