@@ -1,0 +1,249 @@
+from __future__ import annotations
+
+from pathlib import Path
+from types import SimpleNamespace
+from typing import Iterator
+
+from datasets import Dataset
+from torch.utils.data import DataLoader
+
+from obj_det.datasets.models import BBox
+from obj_det.models.adapters.base import BaseModelAdapter
+from obj_det.models.data.row_parser import HFDetectionRowParser
+from obj_det.models.data.ultralytics_dataset import HFUltralyticsDetectionDataset, ultralytics_detection_collate
+from obj_det.models.data.transforms import bbox_to_original, build_detection_transform
+from obj_det.models.schemas.artifact import ModelArtifact
+from obj_det.models.schemas.config import PredictConfig, TrainConfig
+from obj_det.models.schemas.prediction import PredictionObject, PredictionRecord
+from obj_det.models.utils.repro import set_seed
+
+
+_CONTROLLED_AUG_OFF = {
+    "mosaic": 0.0,
+    "mixup": 0.0,
+    "copy_paste": 0.0,
+    "cutmix": 0.0,
+    "degrees": 0.0,
+    "translate": 0.0,
+    "scale": 0.0,
+    "shear": 0.0,
+    "perspective": 0.0,
+    "flipud": 0.0,
+    "fliplr": 0.0,
+    "hsv_h": 0.0,
+    "hsv_s": 0.0,
+    "hsv_v": 0.0,
+    "erasing": 0.0,
+    "close_mosaic": 0,
+    "multi_scale": 0.0,
+}
+
+
+class UltralyticsDetectionAdapter(BaseModelAdapter):
+    """Ultralytics backend using HF-backed dataloaders, not YOLO folders."""
+
+    def train(self, train_ds: Dataset, val_ds: Dataset, train_cfg: TrainConfig) -> ModelArtifact:
+        try:
+            from ultralytics.models.yolo.detect import DetectionTrainer
+        except ImportError as exc:
+            raise ImportError("Install the models extra to use backend='ultralytics'.") from exc
+
+        set_seed(train_cfg.seed)
+        train_cfg.output_dir.mkdir(parents=True, exist_ok=True)
+        parser = HFDetectionRowParser(classes=train_cfg.classes, label_mode=train_cfg.label_mode)
+        transform = build_detection_transform(
+            train_cfg.augmentation_policy,
+            train_cfg.image_size,
+            train_cfg.backend_params.get("transform_params", {}),
+        )
+        batch_size = train_cfg.per_device_batch_size or train_cfg.effective_batch_size
+        overrides = self._train_overrides(train_cfg, batch_size=batch_size)
+
+        trainer_cls = self._trainer_class(DetectionTrainer)
+        trainer = trainer_cls(
+            overrides=overrides,
+            train_ds=train_ds,
+            val_ds=val_ds,
+            parser=parser,
+            transform=transform,
+            classes=train_cfg.classes,
+            max_steps=train_cfg.max_steps,
+        )
+        trainer.train()
+
+        checkpoint_path = trainer.best if trainer.best.exists() else trainer.last
+        return ModelArtifact(
+            model_key=self.key,
+            backend=self.backend,
+            run_key=train_cfg.run_key,
+            classes=train_cfg.classes,
+            label_mode=train_cfg.label_mode,
+            artifact_path=Path(trainer.save_dir),
+            checkpoint_path=Path(checkpoint_path) if checkpoint_path.exists() else None,
+            meta={"ultralytics_args": dict(vars(trainer.args))},
+        )
+
+    def predict(
+        self,
+        ds: Dataset,
+        artifact: ModelArtifact,
+        predict_cfg: PredictConfig,
+    ) -> Iterator[PredictionRecord]:
+        try:
+            from ultralytics import YOLO
+        except ImportError as exc:
+            raise ImportError("Install the models extra to use backend='ultralytics'.") from exc
+
+        checkpoint = artifact.checkpoint_path or artifact.artifact_path or Path(str(self.cfg.model_name_or_path))
+        model = YOLO(str(checkpoint))
+        device = predict_cfg.backend_params.get("device")
+        parser = HFDetectionRowParser(classes=predict_cfg.classes, label_mode=predict_cfg.label_mode)
+        transform = build_detection_transform(
+            predict_cfg.augmentation_policy,
+            predict_cfg.image_size,
+            predict_cfg.backend_params.get("transform_params", {}),
+        )
+        rows = list(ds)
+
+        for start in range(0, len(rows), predict_cfg.batch_size):
+            originals = [parser.parse(row) for row in rows[start : start + predict_cfg.batch_size]]
+            samples = [transform(sample) for sample in originals]
+            results = model.predict(
+                source=[sample.image for sample in samples],
+                imgsz=predict_cfg.image_size,
+                conf=predict_cfg.conf_threshold,
+                iou=predict_cfg.iou_threshold,
+                device=device,
+                verbose=False,
+                save=False,
+            )
+
+            for original, sample, result in zip(originals, samples, results):
+                preprocess = sample.meta.get("preprocess")
+                predictions: list[PredictionObject] = []
+                boxes = result.boxes
+                if boxes is not None:
+                    for xyxy, conf, cls in zip(boxes.xyxy, boxes.conf, boxes.cls):
+                        class_idx = int(cls.detach().cpu())
+                        if class_idx < 0 or class_idx >= len(predict_cfg.classes):
+                            continue
+                        bbox = BBox.from_xyxy([float(value) for value in xyxy.detach().cpu().tolist()])
+                        if preprocess is not None:
+                            bbox = bbox_to_original(bbox, preprocess)
+                        if bbox is None:
+                            continue
+                        predictions.append(
+                            PredictionObject(
+                                bbox=bbox,
+                                label=predict_cfg.classes[class_idx],
+                                label_id=class_idx,
+                                score=float(conf.detach().cpu()),
+                            )
+                        )
+
+                yield PredictionRecord(
+                    image_id=original.image_id,
+                    dataset=original.dataset,
+                    split=original.split,
+                    model_key=self.key,
+                    width=original.width,
+                    height=original.height,
+                    predictions=predictions,
+                )
+
+    def _train_overrides(self, train_cfg: TrainConfig, *, batch_size: int) -> dict:
+        hparams = train_cfg.hparams
+        project = train_cfg.output_dir.parent if train_cfg.output_dir.parent != Path("") else Path(".")
+        overrides = {
+            "task": "detect",
+            "mode": "train",
+            "model": str(self.cfg.model_name_or_path),
+            "data": "hf://obj-det",
+            "project": str(project),
+            "name": train_cfg.output_dir.name,
+            "exist_ok": True,
+            "epochs": int(train_cfg.max_epochs or 1),
+            "imgsz": int(train_cfg.image_size),
+            "batch": int(batch_size),
+            "seed": int(train_cfg.seed),
+            "amp": bool(train_cfg.amp),
+            "workers": int(train_cfg.backend_params.get("workers", 0)),
+            "val": False,
+            "plots": False,
+            "save": True,
+            "device": train_cfg.backend_params.get("device"),
+            "optimizer": hparams.get("optimizer", train_cfg.backend_params.get("optimizer", "auto")),
+            "lr0": float(hparams.get("lr0", hparams.get("learning_rate", 0.01))),
+            "weight_decay": float(hparams.get("weight_decay", 0.0005)),
+            "momentum": float(hparams.get("momentum", 0.937)),
+            "warmup_epochs": float(hparams.get("warmup_epochs", 3.0)),
+            "cos_lr": bool(hparams.get("cos_lr", False)),
+        }
+        if train_cfg.max_steps is not None:
+            overrides["epochs"] = max(1, int(train_cfg.max_epochs or 1))
+        if train_cfg.protocol in {"controlled", "equal_hpo"}:
+            overrides.update(_CONTROLLED_AUG_OFF)
+        overrides.update(train_cfg.backend_params.get("overrides", {}))
+        return overrides
+
+    def _trainer_class(self, detection_trainer_cls):
+        class HFBackedDetectionTrainer(detection_trainer_cls):
+            def __init__(self, *args, train_ds, val_ds, parser, transform, classes, max_steps, **kwargs):
+                self._hf_train_ds = train_ds
+                self._hf_val_ds = val_ds
+                self._hf_parser = parser
+                self._hf_transform = transform
+                self._hf_classes = classes
+                self._hf_max_steps = max_steps
+                self._hf_seen_steps = 0
+                super().__init__(*args, **kwargs)
+
+            def run_callbacks(self, event: str):
+                super().run_callbacks(event)
+                if event == "on_train_batch_end" and self._hf_max_steps is not None:
+                    self._hf_seen_steps += 1
+                    if self._hf_seen_steps >= self._hf_max_steps:
+                        self.stop = True
+
+            def get_dataset(self):
+                return {
+                    "train": "hf_train",
+                    "val": "hf_val",
+                    "nc": len(self._hf_classes),
+                    "names": {idx: name for idx, name in enumerate(self._hf_classes)},
+                    "channels": 3,
+                }
+
+            def get_dataloader(self, dataset_path: str, batch_size: int = 16, rank: int = 0, mode: str = "train"):
+                ds = self._hf_train_ds if mode == "train" else self._hf_val_ds
+                dataset = HFUltralyticsDetectionDataset(ds, self._hf_parser, self._hf_transform)
+                return DataLoader(
+                    dataset,
+                    batch_size=batch_size,
+                    shuffle=mode == "train",
+                    num_workers=0,
+                    collate_fn=ultralytics_detection_collate,
+                )
+
+            def get_validator(self):
+                return _NoOpUltralyticsValidator()
+
+            def validate(self):
+                fitness = -float(self.loss.detach().cpu()) if getattr(self, "loss", None) is not None else 0.0
+                if not self.best_fitness or self.best_fitness < fitness:
+                    self.best_fitness = fitness
+                return {}, fitness
+
+            def final_eval(self):
+                return None
+
+        return HFBackedDetectionTrainer
+
+
+class _NoOpUltralyticsValidator:
+    def __init__(self):
+        self.metrics = SimpleNamespace(keys=[])
+        self.args = SimpleNamespace(plots=False, compile=False)
+
+    def __call__(self, *args, **kwargs):
+        return {"fitness": 0.0}
