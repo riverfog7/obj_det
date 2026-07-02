@@ -49,7 +49,7 @@ class HFTrainerDetectionAdapter(BaseModelAdapter):
         transform = build_detection_transform(
             train_cfg.augmentation_policy,
             train_cfg.image_size,
-            train_cfg.backend_params.get("transform_params", {}),
+            {**train_cfg.backend_params.get("transform_params", {}), "seed": train_cfg.seed},
         )
         processor_kwargs = train_cfg.backend_params.get("processor_kwargs", {"do_resize": False})
         train_data = HFTrainerDetectionDataset(train_ds, parser, transform, processor, processor_kwargs)

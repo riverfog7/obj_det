@@ -54,7 +54,7 @@ class UltralyticsDetectionAdapter(BaseModelAdapter):
         transform = build_detection_transform(
             train_cfg.augmentation_policy,
             train_cfg.image_size,
-            train_cfg.backend_params.get("transform_params", {}),
+            {**train_cfg.backend_params.get("transform_params", {}), "seed": train_cfg.seed},
         )
         batch_size = train_cfg.per_device_batch_size or train_cfg.effective_batch_size
         overrides = self._train_overrides(train_cfg, batch_size=batch_size)

@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-import random
 from abc import ABC, abstractmethod
 from dataclasses import replace
 from typing import Any
 
+import albumentations as A
 import numpy as np
-from PIL import Image, ImageEnhance
+from PIL import Image
 
 from obj_det.datasets.models import BBox
 from obj_det.models.data.sample import DetectionSample, DetectionTarget
@@ -40,6 +40,7 @@ class BasicDetectionTransform(BaseDetectionTransform):
         *,
         horizontal_flip_p: float = 0.5,
         color_jitter_strength: float = 0.1,
+        seed: int | None = None,
     ):
         if not 0.0 <= horizontal_flip_p <= 1.0:
             raise ValueError("horizontal_flip_p must be in [0, 1]")
@@ -48,12 +49,29 @@ class BasicDetectionTransform(BaseDetectionTransform):
         self.image_size = image_size
         self.horizontal_flip_p = horizontal_flip_p
         self.color_jitter_strength = color_jitter_strength
+        self.seed = seed
+        transforms = []
+        if self.horizontal_flip_p > 0:
+            transforms.append(A.HorizontalFlip(p=self.horizontal_flip_p))
+        if self.color_jitter_strength > 0:
+            hue = min(0.5, self.color_jitter_strength * 0.5)
+            transforms.append(
+                A.ColorJitter(
+                    brightness=self.color_jitter_strength,
+                    contrast=self.color_jitter_strength,
+                    saturation=self.color_jitter_strength,
+                    hue=hue,
+                    p=1.0,
+                )
+            )
+        self.transform = _make_albumentations_transform(
+            transforms,
+            seed=self.seed,
+            uses_bboxes=self.horizontal_flip_p > 0,
+        )
 
     def __call__(self, sample: DetectionSample) -> DetectionSample:
-        if random.random() < self.horizontal_flip_p:
-            sample = horizontal_flip_sample(sample)
-        if self.color_jitter_strength > 0:
-            sample = color_jitter_sample(sample, self.color_jitter_strength)
+        sample = _apply_albumentations(sample, self.transform)
         return resize_pad_sample(sample, self.image_size)
 
 
@@ -65,24 +83,27 @@ class WeatherDetectionTransform(BaseDetectionTransform):
             image_size=image_size,
             horizontal_flip_p=float(self.params.get("horizontal_flip_p", 0.5)),
             color_jitter_strength=float(self.params.get("color_jitter_strength", 0.1)),
+            seed=_optional_int(self.params.get("seed")),
         )
+        self.seed = _optional_int(self.params.get("seed"))
+        self._weather_cache: dict[tuple[str, float], Any] = {}
 
     def __call__(self, sample: DetectionSample) -> DetectionSample:
         sample = self.basic(sample)
         effect = str(self.params.get("effect") or sample.condition or "haze").lower()
-        image = sample.image.astype(np.float32)
         strength = float(self.params.get("strength", 0.25))
+        transform = self._weather_transform(effect, strength)
+        return _apply_albumentations(sample, transform)
 
-        if effect in {"haze", "fog", "smoke"}:
-            image = image * (1.0 - strength) + 255.0 * strength
-        elif effect in {"low_light", "night"}:
-            image = image * max(0.0, 1.0 - strength)
-        elif effect == "rain":
-            image = _add_rain(image, strength)
-        elif effect == "snow":
-            image = _add_snow(image, strength)
-
-        return replace(sample, image=np.clip(image, 0, 255).astype(np.uint8))
+    def _weather_transform(self, effect: str, strength: float):
+        key = (effect, max(0.0, min(float(strength), 1.0)))
+        if key not in self._weather_cache:
+            self._weather_cache[key] = _make_albumentations_transform(
+                _weather_transforms(*key),
+                seed=self.seed,
+                uses_bboxes=False,
+            )
+        return self._weather_cache[key]
 
 
 def build_detection_transform(
@@ -98,6 +119,7 @@ def build_detection_transform(
             image_size=image_size,
             horizontal_flip_p=float(params.get("horizontal_flip_p", 0.5)),
             color_jitter_strength=float(params.get("color_jitter_strength", 0.1)),
+            seed=_optional_int(params.get("seed")),
         )
     if policy == "weather":
         return WeatherDetectionTransform(image_size=image_size, params=params)
@@ -106,37 +128,55 @@ def build_detection_transform(
     raise ValueError(f"Unknown augmentation policy: {policy}")
 
 
-def horizontal_flip_sample(sample: DetectionSample) -> DetectionSample:
-    image = np.ascontiguousarray(np.flip(sample.image, axis=1))
-    width = sample.width
-    targets = [
-        replace(
-            target,
-            bbox=BBox.from_xywh(
-                [
-                    width - target.bbox.x - target.bbox.w,
-                    target.bbox.y,
-                    target.bbox.w,
-                    target.bbox.h,
-                ]
-            ),
+def _make_albumentations_transform(
+    transforms: list[Any],
+    *,
+    seed: int | None = None,
+    uses_bboxes: bool,
+):
+    if not transforms:
+        return None
+    bbox_params = None
+    if uses_bboxes:
+        bbox_params = A.BboxParams(
+            format="coco",
+            label_fields=["target_indices"],
+            clip=True,
+            filter_invalid_bboxes=True,
         )
-        for target in sample.targets
-    ]
-    meta = dict(sample.meta)
-    meta["horizontal_flip"] = True
-    return replace(sample, image=image, targets=targets, meta=meta)
+    return A.Compose(transforms, bbox_params=bbox_params, seed=seed), uses_bboxes
 
 
-def color_jitter_sample(sample: DetectionSample, strength: float) -> DetectionSample:
-    image = Image.fromarray(sample.image)
-    low = max(0.0, 1.0 - strength)
-    high = 1.0 + strength
+def _apply_albumentations(sample: DetectionSample, transform) -> DetectionSample:
+    if transform is None:
+        return sample
 
-    for enhancer_cls in (ImageEnhance.Brightness, ImageEnhance.Contrast, ImageEnhance.Color):
-        image = enhancer_cls(image).enhance(random.uniform(low, high))
+    compose, uses_bboxes = transform
+    if not uses_bboxes:
+        result = compose(image=np.ascontiguousarray(sample.image))
+        image = np.asarray(result["image"], dtype=np.uint8)
+        height, width = image.shape[:2]
+        return replace(sample, image=image, width=width, height=height)
 
-    return replace(sample, image=np.asarray(image.convert("RGB")))
+    result = compose(
+        image=np.ascontiguousarray(sample.image),
+        bboxes=[target.bbox.xywh() for target in sample.targets],
+        target_indices=list(range(len(sample.targets))),
+    )
+
+    image = np.asarray(result["image"], dtype=np.uint8)
+    height, width = image.shape[:2]
+    targets: list[DetectionTarget] = []
+    for bbox_values, target_index in zip(result["bboxes"], result["target_indices"]):
+        try:
+            bbox = BBox.from_xywh(list(bbox_values)).clipped(width, height)
+        except ValueError:
+            continue
+        if bbox is None:
+            continue
+        targets.append(replace(sample.targets[int(round(float(target_index)))], bbox=bbox))
+
+    return replace(sample, image=image, width=width, height=height, targets=targets)
 
 
 def resize_pad_sample(sample: DetectionSample, image_size: int) -> DetectionSample:
@@ -212,22 +252,36 @@ def bbox_to_original(bbox: BBox, preprocess: dict[str, Any]) -> BBox | None:
     return BBox.from_xyxy([x1, y1, x2, y2])
 
 
-def _add_rain(image: np.ndarray, strength: float) -> np.ndarray:
-    out = image.copy()
-    height, width = out.shape[:2]
-    count = max(1, int(width * height * strength / 900))
-    for _ in range(count):
-        x = random.randrange(width)
-        y = random.randrange(height)
-        length = random.randint(4, max(5, height // 12))
-        x2 = min(width - 1, x + length // 3)
-        y2 = min(height - 1, y + length)
-        out[y:y2, x:x2 + 1] = np.maximum(out[y:y2, x:x2 + 1], 200)
-    return out * (1.0 - strength * 0.25)
+def _weather_transforms(effect: str, strength: float) -> list[Any]:
+    strength = max(0.0, min(float(strength), 1.0))
+    if effect in {"haze", "fog", "smoke"}:
+        fog = max(0.01, strength)
+        return [A.RandomFog(alpha_coef=0.08, fog_coef_range=(fog, fog), p=1.0)]
+    if effect in {"low_light", "night"}:
+        brightness = -strength
+        return [
+            A.RandomBrightnessContrast(
+                brightness_limit=(brightness, brightness),
+                contrast_limit=(0.0, 0.0),
+                p=1.0,
+            )
+        ]
+    if effect == "rain":
+        return [
+            A.RandomRain(
+                brightness_coefficient=max(0.0, 1.0 - strength * 0.7),
+                rain_type="default",
+                p=1.0,
+            )
+        ]
+    if effect == "snow":
+        low = min(0.5, strength * 0.2)
+        high = max(low, min(0.8, strength * 0.3 + 0.1))
+        return [A.RandomSnow(snow_point_range=(low, high), p=1.0)]
+    return []
 
 
-def _add_snow(image: np.ndarray, strength: float) -> np.ndarray:
-    out = image.copy()
-    mask = np.random.random(out.shape[:2]) < min(0.5, strength * 0.2)
-    out[mask] = 255
-    return out * (1.0 + strength * 0.15)
+def _optional_int(value: Any) -> int | None:
+    if value is None:
+        return None
+    return int(value)
