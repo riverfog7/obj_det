@@ -6,8 +6,9 @@ from datasets import Dataset
 
 from obj_det.models.data.hf_targets import sample_to_coco_annotation
 from obj_det.models.data.row_parser import HFDetectionRowParser
-from obj_det.models.data.transforms import resize_pad_sample
+from obj_det.models.data.transforms import DetectionTransform
 from obj_det.models.data.ultralytics_dataset import HFUltralyticsDetectionDataset, ultralytics_detection_collate
+from obj_det.models.schemas import TransformConfig
 
 from .helpers import row
 
@@ -24,7 +25,8 @@ class BackendDataTest(unittest.TestCase):
     def test_ultralytics_dataset_and_collate(self):
         ds = Dataset.from_list([row(), row(image_id="img2")])
         parser = HFDetectionRowParser(["car"], "meta")
-        dataset = HFUltralyticsDetectionDataset(ds, parser, lambda sample: resize_pad_sample(sample, 64))
+        transform = DetectionTransform(TransformConfig(image_size=64))
+        dataset = HFUltralyticsDetectionDataset(ds, parser, transform)
         item = dataset[0]
         batch = ultralytics_detection_collate([dataset[0], dataset[1]])
 

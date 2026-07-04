@@ -9,7 +9,7 @@ from tempfile import TemporaryDirectory
 from datasets import Dataset
 
 from obj_det.models.adapters.factory import model_adapter_from_config
-from obj_det.models.schemas import EvalConfig, ModelConfig, PredictConfig, TrainConfig
+from obj_det.models.schemas import EvalConfig, ModelConfig, PredictConfig, TrainConfig, TransformConfig
 
 from .helpers import row
 
@@ -43,6 +43,7 @@ class BackendSmokeTest(unittest.TestCase):
     def test_hf_trainer_smoke(self):
         ds = tiny_dataset()
         with TemporaryDirectory() as tmp:
+            transform = TransformConfig(image_size=64)
             adapter = model_adapter_from_config(ModelConfig(
                 key="tiny_detr",
                 backend="hf_trainer",
@@ -52,17 +53,16 @@ class BackendSmokeTest(unittest.TestCase):
                 run_key="hf_smoke",
                 classes=["car"],
                 output_dir=Path(tmp) / "hf",
-                image_size=64,
+                transform=transform,
                 max_epochs=1,
                 max_steps=1,
                 effective_batch_size=1,
                 per_device_batch_size=1,
-                augmentation_policy="none",
                 amp=False,
                 backend_params={"logging_steps": 1},
             ))
-            preds = list(adapter.predict(ds, artifact, PredictConfig(classes=["car"], image_size=64, batch_size=1, conf_threshold=0.0)))
-            result = adapter.evaluate(ds, artifact, EvalConfig(classes=["car"], image_size=64, conf_threshold=0.0))
+            preds = list(adapter.predict(ds, artifact, PredictConfig(classes=["car"], transform=transform, batch_size=1, conf_threshold=0.0)))
+            result = adapter.evaluate(ds, artifact, EvalConfig(classes=["car"], transform=transform, conf_threshold=0.0))
 
         self.assertIsNotNone(artifact.checkpoint_path)
         self.assertEqual(len(preds), 1)
@@ -71,6 +71,7 @@ class BackendSmokeTest(unittest.TestCase):
     def test_ultralytics_smoke(self):
         ds = tiny_dataset(size=(96, 96))
         with TemporaryDirectory() as tmp, working_directory(Path(tmp)):
+            transform = TransformConfig(image_size=96)
             adapter = model_adapter_from_config(ModelConfig(
                 key="yolo_smoke",
                 backend="ultralytics",
@@ -80,21 +81,20 @@ class BackendSmokeTest(unittest.TestCase):
                 run_key="yolo_smoke",
                 classes=["car"],
                 output_dir=Path(tmp) / "yolo",
-                image_size=96,
+                transform=transform,
                 max_epochs=1,
                 max_steps=1,
                 effective_batch_size=1,
                 per_device_batch_size=1,
-                augmentation_policy="none",
                 amp=False,
                 hparams={"lr0": 0.001, "warmup_epochs": 0},
                 backend_params={"device": "cpu", "workers": 0, "overrides": {"verbose": False}},
             ))
             preds = list(adapter.predict(ds, artifact, PredictConfig(
-                classes=["car"], image_size=96, batch_size=1, conf_threshold=0.0, backend_params={"device": "cpu"}
+                classes=["car"], transform=transform, batch_size=1, conf_threshold=0.0, backend_params={"device": "cpu"}
             )))
             result = adapter.evaluate(ds, artifact, EvalConfig(
-                classes=["car"], image_size=96, conf_threshold=0.0, backend_params={"device": "cpu"}
+                classes=["car"], transform=transform, conf_threshold=0.0, backend_params={"device": "cpu"}
             ))
 
         self.assertIsNotNone(artifact.checkpoint_path)

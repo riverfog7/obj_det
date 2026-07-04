@@ -9,7 +9,7 @@ from tempfile import TemporaryDirectory
 from datasets import Dataset
 
 from obj_det.models.adapters.base import BaseModelAdapter
-from obj_det.models.schemas import EvalConfig, ModelConfig, SearchSpace, TrainConfig, TuningConfig
+from obj_det.models.schemas import EvalConfig, ModelConfig, SearchSpace, TrainConfig, TransformConfig, TuningConfig
 from obj_det.models.schemas.artifact import ModelArtifact
 from obj_det.models.schemas.config import PredictConfig
 from obj_det.models.schemas.prediction import PredictionRecord
@@ -152,12 +152,13 @@ class TuningTest(unittest.TestCase):
         ds = Dataset.from_list([row()])
         adapter = DummyAdapter()
         with TemporaryDirectory() as tmp:
+            transform = TransformConfig(image_size=32)
             result = TuningRunner().optimize(
                 adapter=adapter,
                 train_ds=ds,
                 val_ds=ds,
-                base_train_cfg=TrainConfig(run_key="r", classes=["car"], output_dir=Path(tmp) / "base"),
-                eval_cfg=EvalConfig(classes=["car"]),
+                base_train_cfg=TrainConfig(run_key="r", classes=["car"], output_dir=Path(tmp) / "base", transform=transform),
+                eval_cfg=EvalConfig(classes=["car"], transform=transform),
                 search_space=SearchSpace(params={
                     "score": {"type": "float", "low": 0.0, "high": 1.0},
                     "fail": {"type": "categorical", "choices": [True, False]},
@@ -175,13 +176,14 @@ class TuningTest(unittest.TestCase):
         ds = Dataset.from_list([row()])
         adapter = DummyAdapter()
         with TemporaryDirectory() as tmp:
+            transform = TransformConfig(image_size=32)
             runs = run_final_seeds(
                 adapter=adapter,
                 train_ds=ds,
                 val_ds=ds,
                 test_ds=ds,
-                base_train_cfg=TrainConfig(run_key="final", classes=["car"], output_dir=Path(tmp)),
-                eval_cfg=EvalConfig(classes=["car"]),
+                base_train_cfg=TrainConfig(run_key="final", classes=["car"], output_dir=Path(tmp), transform=transform),
+                eval_cfg=EvalConfig(classes=["car"], transform=transform),
                 hparams={"score": 0.4},
                 seeds=[0, 1, 2],
             )

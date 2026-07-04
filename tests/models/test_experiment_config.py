@@ -21,10 +21,14 @@ class ExperimentConfigTest(unittest.TestCase):
                     "backend": "torchvision",
                     "model_name_or_path": "fasterrcnn_resnet50_fpn",
                 },
+                "transform": {
+                    "image_size": 320,
+                    "horizontal_flip_p": 0.5,
+                    "color_jitter_strength": 0.1,
+                },
                 "train": {
                     "run_key": "r",
                     "label_mode": "meta",
-                    "image_size": 320,
                     "output_dir": "runs/r",
                 },
                 "eval": {},
@@ -36,12 +40,14 @@ class ExperimentConfigTest(unittest.TestCase):
         self.assertEqual(cfg.eval.classes, ["car", "person"])
         self.assertEqual(cfg.predict.classes, ["car", "person"])
         self.assertEqual(cfg.eval.label_mode, "meta")
-        self.assertEqual(cfg.predict.image_size, 320)
+        self.assertEqual(cfg.predict.transform.image_size, 320)
+        self.assertEqual(cfg.train.transform.horizontal_flip_p, 0.5)
 
-    def test_relative_model_and_search_space_files_load(self):
+    def test_relative_model_transform_and_search_space_files_load(self):
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
             (root / "models").mkdir()
+            (root / "transforms").mkdir()
             (root / "spaces").mkdir()
             (root / "experiments").mkdir()
             (root / "models" / "m.yaml").write_text(
@@ -50,6 +56,16 @@ class ExperimentConfigTest(unittest.TestCase):
                         "key: m",
                         "backend: torchvision",
                         "model_name_or_path: fasterrcnn_resnet50_fpn",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            (root / "transforms" / "t.yaml").write_text(
+                "\n".join(
+                    [
+                        "image_size: 64",
+                        "horizontal_flip_p: 0.0",
+                        "color_jitter_strength: 0.0",
                     ]
                 ),
                 encoding="utf-8",
@@ -74,6 +90,7 @@ class ExperimentConfigTest(unittest.TestCase):
                         "  path: datasets/tiny",
                         "classes: [car]",
                         "model_file: ../models/m.yaml",
+                        "transform_file: ../transforms/t.yaml",
                         "train:",
                         "  run_key: r",
                         "  output_dir: runs/r",
@@ -87,12 +104,14 @@ class ExperimentConfigTest(unittest.TestCase):
             cfg = load_experiment_config(exp_path)
 
         self.assertEqual(cfg.model.key, "m")
+        self.assertEqual(cfg.train.transform.image_size, 64)
         self.assertIn("learning_rate", cfg.search_space.params)
 
-    def test_rejects_duplicate_model_or_search_space_source(self):
+    def test_rejects_duplicate_model_transform_or_search_space_source(self):
         base = {
             "dataset": {"path": "datasets/tiny"},
             "classes": ["car"],
+            "transform": {"image_size": 32},
             "train": {"run_key": "r", "output_dir": "runs/r"},
             "eval": {},
         }
@@ -106,6 +125,19 @@ class ExperimentConfigTest(unittest.TestCase):
                         "model_name_or_path": "fasterrcnn_resnet50_fpn",
                     },
                     "model_file": "m.yaml",
+                }
+            )
+
+        with self.assertRaises(ValidationError):
+            ExperimentConfig.model_validate(
+                {
+                    **base,
+                    "model": {
+                        "key": "m",
+                        "backend": "torchvision",
+                        "model_name_or_path": "fasterrcnn_resnet50_fpn",
+                    },
+                    "transform_file": "t.yaml",
                 }
             )
 
