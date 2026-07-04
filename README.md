@@ -332,6 +332,8 @@ logging:
     tags: []
 ```
 
-Logged values include backend train scalars, HPO trial metrics, final-seed metrics,
-and evaluator metrics including per-class, per-condition, per-domain, and per-size
-results. Images, prediction previews, tables, and plots are not logged.
+Logged values include backend train scalars and evaluator metrics including
+per-class, per-condition, per-domain, and per-size results. `models optimize`
+creates one logging run per HPO trial, grouped by study name. `models final`
+creates one logging run per seed, grouped by final run name. Images, prediction
+previews, tables, and plots are not logged.

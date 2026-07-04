@@ -60,7 +60,10 @@ class WandbLogger(BaseExperimentLogger):
         self.log_metrics({"trial/number": trial_number})
         if self.run is not None:
             self.run.config.update(
-                {f"trial_{trial_number:04d}/{key}": value for key, value in hparams.items()},
+                {
+                    "trial/number": trial_number,
+                    **{f"hparams/{key}": value for key, value in hparams.items()},
+                },
                 allow_val_change=True,
             )
 

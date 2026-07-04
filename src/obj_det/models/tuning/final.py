@@ -7,7 +7,7 @@ from typing import Any, Iterable
 from datasets import Dataset
 
 from obj_det.models.adapters.base import BaseModelAdapter
-from obj_det.models.logging.base import BaseExperimentLogger
+from obj_det.models.logging.factory import LoggerFactory
 from obj_det.models.schemas.artifact import ModelArtifact
 from obj_det.models.schemas.config import EvalConfig, TrainConfig
 from obj_det.models.schemas.result import EvalResult
@@ -33,7 +33,8 @@ def run_final_seeds(
     seeds: Iterable[int],
     output_dir: Path | None = None,
     evaluate_val: bool = True,
-    logger: BaseExperimentLogger | None = None,
+    logger_factory: LoggerFactory | None = None,
+    run_config: dict[str, Any] | None = None,
 ) -> list[FinalSeedRun]:
     """Train/evaluate final runs for fixed seeds without choosing a best seed."""
 
@@ -49,19 +50,41 @@ def run_final_seeds(
             },
             deep=True,
         )
-        prefix = f"final/seed_{seed}"
-        artifact = adapter.train(train_ds, val_ds, train_cfg, logger=logger, log_prefix=f"{prefix}/train")
-        val_result = (
-            adapter.evaluate(val_ds, artifact, eval_cfg, logger=logger, log_prefix=f"{prefix}/val")
-            if evaluate_val
-            else None
-        )
-        test_result = (
-            adapter.evaluate(test_ds, artifact, eval_cfg, logger=logger, log_prefix=f"{prefix}/test")
-            if test_ds is not None
-            else None
-        )
-        if logger is not None and artifact.checkpoint_path is not None:
-            logger.log_artifact(artifact.checkpoint_path, name=f"final_seed_{seed}_checkpoint")
+        run_name = f"{base_train_cfg.run_key}_final_seed{seed}"
+        logger = logger_factory(run_name, run_output_dir / "logs/events.jsonl") if logger_factory else None
+        state = "finished"
+        error = None
+        try:
+            if logger is not None:
+                logger.start_run(
+                    run_name,
+                    {
+                        **(run_config or {}),
+                        "final": {
+                            "seed": seed,
+                            "hparams": hparams,
+                        },
+                    },
+                )
+            artifact = adapter.train(train_ds, val_ds, train_cfg, logger=logger, log_prefix="train")
+            val_result = (
+                adapter.evaluate(val_ds, artifact, eval_cfg, logger=logger, log_prefix="val")
+                if evaluate_val
+                else None
+            )
+            test_result = (
+                adapter.evaluate(test_ds, artifact, eval_cfg, logger=logger, log_prefix="test")
+                if test_ds is not None
+                else None
+            )
+            if logger is not None and artifact.checkpoint_path is not None:
+                logger.log_artifact(artifact.checkpoint_path, name="checkpoint")
+        except Exception as exc:
+            state = "failed"
+            error = repr(exc)
+            raise
+        finally:
+            if logger is not None:
+                logger.finish_run(state=state, error=error)
         runs.append(FinalSeedRun(seed=seed, artifact=artifact, val_result=val_result, test_result=test_result))
     return runs

@@ -139,10 +139,13 @@ class FakeOptuna(types.ModuleType):
 
 
 class RecordingLogger:
-    def __init__(self):
+    def __init__(self, default_log_path: Path | None = None):
+        self.default_log_path = default_log_path
+        self.run_name = None
         self.events = []
 
     def start_run(self, name, config):
+        self.run_name = name
         self.events.append(("start_run", name, config))
 
     def finish_run(self, state="finished", error=None):
@@ -162,6 +165,16 @@ class RecordingLogger:
 
     def log_artifact(self, path, name=None):
         self.events.append(("artifact", name, path))
+
+
+class RecordingLoggerFactory:
+    def __init__(self):
+        self.loggers = []
+
+    def __call__(self, run_name, default_log_path):
+        logger = RecordingLogger(default_log_path=Path(default_log_path))
+        self.loggers.append(logger)
+        return logger
 
 
 class TuningTest(unittest.TestCase):
@@ -209,10 +222,10 @@ class TuningTest(unittest.TestCase):
         ])
         ds = Dataset.from_list([row()])
         adapter = DummyAdapter()
-        logger = RecordingLogger()
+        logger_factory = RecordingLoggerFactory()
         with TemporaryDirectory() as tmp:
             transform = TransformConfig(image_size=32)
-            TuningRunner(logger=logger).optimize(
+            TuningRunner(logger_factory=logger_factory).optimize(
                 adapter=adapter,
                 train_ds=ds,
                 val_ds=ds,
@@ -223,12 +236,49 @@ class TuningTest(unittest.TestCase):
                     "fail": {"type": "categorical", "choices": [True, False]},
                 }),
                 tuning_cfg=TuningConfig(study_name="s", n_trials=1, output_dir=Path(tmp)),
+                run_config={"experiment": "cfg"},
             )
 
+        self.assertEqual(len(logger_factory.loggers), 1)
+        logger = logger_factory.loggers[0]
+        self.assertEqual(logger.run_name, "s_trial_0000")
+        self.assertEqual(logger.default_log_path, Path(tmp) / "trial_0000" / "logs" / "events.jsonl")
+        self.assertEqual(logger.events[0][0], "start_run")
+        self.assertEqual(logger.events[0][2]["trial"]["number"], 0)
+        self.assertEqual(logger.events[0][2]["trial"]["hparams"]["score"], 0.3)
         metric_events = [event for event in logger.events if event[0] == "metrics"]
-        self.assertTrue(any("hpo/trial_0000/train/dummy_loss" in event[1] for event in metric_events))
-        self.assertTrue(any("hpo/trial_0000/objective/map_50_95" in event[1] for event in metric_events))
-        self.assertTrue(any(event[:2] == ("eval_result", "hpo/trial_0000/eval") for event in logger.events))
+        self.assertTrue(any("train/dummy_loss" in event[1] for event in metric_events))
+        self.assertTrue(any("objective/map_50_95" in event[1] for event in metric_events))
+        self.assertTrue(any(event[:2] == ("eval_result", "val") for event in logger.events))
+        self.assertEqual(logger.events[-1][:2], ("finish_run", "finished"))
+
+    def test_hpo_failed_trial_gets_own_failed_run(self):
+        sys.modules["optuna"] = FakeOptuna([
+            {"score": 0.1, "fail": True},
+            {"score": 0.3, "fail": False},
+        ])
+        ds = Dataset.from_list([row()])
+        adapter = DummyAdapter()
+        logger_factory = RecordingLoggerFactory()
+        with TemporaryDirectory() as tmp:
+            transform = TransformConfig(image_size=32)
+            TuningRunner(logger_factory=logger_factory).optimize(
+                adapter=adapter,
+                train_ds=ds,
+                val_ds=ds,
+                base_train_cfg=TrainConfig(run_key="r", classes=["car"], output_dir=Path(tmp) / "base", transform=transform),
+                eval_cfg=EvalConfig(classes=["car"], transform=transform),
+                search_space=SearchSpace(params={
+                    "score": {"type": "float", "low": 0.0, "high": 1.0},
+                    "fail": {"type": "categorical", "choices": [True, False]},
+                }),
+                tuning_cfg=TuningConfig(study_name="s", n_trials=2, output_dir=Path(tmp)),
+            )
+
+        self.assertEqual([logger.run_name for logger in logger_factory.loggers], ["s_trial_0000", "s_trial_0001"])
+        self.assertEqual(logger_factory.loggers[0].events[-1][0], "finish_run")
+        self.assertEqual(logger_factory.loggers[0].events[-1][1], "failed")
+        self.assertEqual(logger_factory.loggers[1].events[-1][1], "finished")
 
     def test_final_seeds_runs_all_seeds_without_picking_best(self):
         ds = Dataset.from_list([row()])
@@ -249,6 +299,41 @@ class TuningTest(unittest.TestCase):
         self.assertEqual([run.seed for run in runs], [0, 1, 2])
         self.assertEqual([item[0] for item in adapter.trained], [0, 1, 2])
         self.assertEqual(len(adapter.evaluated), 6)
+
+    def test_final_seeds_create_one_logger_run_per_seed(self):
+        ds = Dataset.from_list([row()])
+        adapter = DummyAdapter()
+        logger_factory = RecordingLoggerFactory()
+        with TemporaryDirectory() as tmp:
+            output_dir = Path(tmp) / "final"
+            transform = TransformConfig(image_size=32)
+            run_final_seeds(
+                adapter=adapter,
+                train_ds=ds,
+                val_ds=ds,
+                test_ds=ds,
+                base_train_cfg=TrainConfig(run_key="final", classes=["car"], output_dir=Path(tmp), transform=transform),
+                eval_cfg=EvalConfig(classes=["car"], transform=transform),
+                hparams={"score": 0.4},
+                seeds=[0, 1],
+                output_dir=output_dir,
+                logger_factory=logger_factory,
+                run_config={"experiment": "cfg"},
+            )
+
+        self.assertEqual([logger.run_name for logger in logger_factory.loggers], ["final_final_seed0", "final_final_seed1"])
+        self.assertEqual(
+            [logger.default_log_path for logger in logger_factory.loggers],
+            [
+                output_dir / "final_seed0" / "logs" / "events.jsonl",
+                output_dir / "final_seed1" / "logs" / "events.jsonl",
+            ],
+        )
+        first_events = logger_factory.loggers[0].events
+        self.assertTrue(any(event[0] == "metrics" and "train/dummy_loss" in event[1] for event in first_events))
+        self.assertTrue(any(event[:2] == ("eval_result", "val") for event in first_events))
+        self.assertTrue(any(event[:2] == ("eval_result", "test") for event in first_events))
+        self.assertEqual(first_events[-1][:2], ("finish_run", "finished"))
 
 
 if __name__ == "__main__":

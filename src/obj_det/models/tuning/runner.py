@@ -5,14 +5,14 @@ from typing import Any
 from datasets import Dataset
 
 from obj_det.models.adapters.base import BaseModelAdapter
-from obj_det.models.logging.base import BaseExperimentLogger
+from obj_det.models.logging.factory import LoggerFactory
 from obj_det.models.schemas.config import EvalConfig, TrainConfig
 from obj_det.models.schemas.tuning import BestTrial, SearchSpace, TrialResult, TuningConfig, TuningResult
 
 
 class TuningRunner:
-    def __init__(self, logger: BaseExperimentLogger | None = None):
-        self.logger = logger
+    def __init__(self, logger_factory: LoggerFactory | None = None):
+        self.logger_factory = logger_factory
 
     def optimize(
         self,
@@ -43,9 +43,6 @@ class TuningRunner:
         )
         trial_results: list[TrialResult] = []
 
-        if self.logger:
-            self.logger.start_run(tuning_cfg.study_name, run_config or tuning_cfg.model_dump(mode="json"))
-
         def objective(trial) -> float:
             hparams = self._sample_hparams(trial, search_space)
             trial_output_dir = tuning_cfg.output_dir / f"trial_{trial.number:04d}"
@@ -56,30 +53,41 @@ class TuningRunner:
                 },
                 deep=True,
             )
+            run_name = f"{tuning_cfg.study_name}_trial_{trial.number:04d}"
+            logger = self._make_logger(run_name, trial_output_dir / "logs/events.jsonl")
+            run_payload = {
+                **(run_config or tuning_cfg.model_dump(mode="json")),
+                "trial": {
+                    "number": trial.number,
+                    "hparams": hparams,
+                },
+            }
+            state = "finished"
+            error = None
             try:
-                trial_prefix = f"hpo/trial_{trial.number:04d}"
-                if self.logger:
-                    self.logger.start_trial(trial.number, hparams)
+                if logger:
+                    logger.start_run(run_name, run_payload)
+                    logger.start_trial(trial.number, hparams)
                 artifact = adapter.train(
                     train_ds,
                     val_ds,
                     train_cfg,
-                    logger=self.logger,
-                    log_prefix=f"{trial_prefix}/train",
+                    logger=logger,
+                    log_prefix="train",
                 )
-                if self.logger and artifact.checkpoint_path is not None:
-                    self.logger.log_artifact(artifact.checkpoint_path, name=f"trial_{trial.number:04d}_checkpoint")
+                if logger and artifact.checkpoint_path is not None:
+                    logger.log_artifact(artifact.checkpoint_path, name="checkpoint")
                 result = adapter.evaluate(
                     val_ds,
                     artifact,
                     eval_cfg,
-                    logger=self.logger,
-                    log_prefix=f"{trial_prefix}/eval",
+                    logger=logger,
+                    log_prefix="val",
                 )
                 metric_value = result.metrics.get(tuning_cfg.objective_metric, result.primary_metric_value)
                 trial.report(metric_value, step=0)
-                if self.logger:
-                    self.logger.log_metrics({f"{trial_prefix}/objective/{tuning_cfg.objective_metric}": metric_value})
+                if logger:
+                    logger.log_metrics({f"objective/{tuning_cfg.objective_metric}": metric_value})
                 trial_results.append(
                     TrialResult(
                         trial_number=trial.number,
@@ -90,10 +98,12 @@ class TuningRunner:
                         artifact_path=artifact.artifact_path,
                     )
                 )
-                if self.logger:
-                    self.logger.finish_trial("complete")
+                if logger:
+                    logger.finish_trial("complete")
                 return metric_value
             except Exception as exc:
+                state = "failed"
+                error = repr(exc)
                 trial_results.append(
                     TrialResult(
                         trial_number=trial.number,
@@ -103,26 +113,19 @@ class TuningRunner:
                         error=repr(exc),
                     )
                 )
-                if self.logger:
-                    self.logger.finish_trial("failed", error=repr(exc))
+                if logger:
+                    logger.finish_trial("failed", error=error)
                 raise
+            finally:
+                if logger:
+                    logger.finish_run(state=state, error=error)
 
-        state = "finished"
-        error = None
-        try:
-            study.optimize(
-                objective,
-                n_trials=tuning_cfg.n_trials,
-                timeout=tuning_cfg.timeout_seconds,
-                catch=(Exception,),
-            )
-        except Exception as exc:
-            state = "failed"
-            error = repr(exc)
-            raise
-        finally:
-            if self.logger:
-                self.logger.finish_run(state=state, error=error)
+        study.optimize(
+            objective,
+            n_trials=tuning_cfg.n_trials,
+            timeout=tuning_cfg.timeout_seconds,
+            catch=(Exception,),
+        )
 
         try:
             best_trial = study.best_trial
@@ -184,3 +187,8 @@ class TuningRunner:
         if tuning_cfg.pruner == "asha":
             return optuna.pruners.SuccessiveHalvingPruner()
         raise ValueError(f"Unknown pruner: {tuning_cfg.pruner}")
+
+    def _make_logger(self, run_name: str, default_log_path):
+        if self.logger_factory is None:
+            return None
+        return self.logger_factory(run_name, default_log_path)

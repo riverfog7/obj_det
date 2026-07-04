@@ -16,7 +16,7 @@ from obj_det.models.experiment import (
     save_model_artifact,
     save_tuning_result,
 )
-from obj_det.models.logging.factory import logger_from_config
+from obj_det.models.logging.factory import child_logger_factory_from_config, logger_from_config
 from obj_det.models.schemas.artifact import ModelArtifact
 from obj_det.models.schemas.experiment import ExperimentConfig
 from obj_det.models.tuning.final import FinalSeedRun, run_final_seeds
@@ -135,8 +135,8 @@ def optimize(
     dataset = load_from_disk(exp.dataset.path)
     adapter = _adapter(exp)
 
-    logger = _logger(exp, default_log_path=exp.tuning.output_dir / "logs/events.jsonl", run_name=exp.tuning.study_name)
-    result = TuningRunner(logger=logger).optimize(
+    logger_factory = _child_logger_factory(exp, wandb_group=exp.tuning.study_name)
+    result = TuningRunner(logger_factory=logger_factory).optimize(
         adapter=adapter,
         train_ds=_split(dataset, exp.dataset.train_split),
         val_ds=_split(dataset, exp.dataset.val_split),
@@ -178,36 +178,22 @@ def final_(
 
     output_dir = exp.final.output_dir or exp.train.output_dir / "final"
     out_path = out or output_dir / "final_results.json"
-    logger = _logger(exp, default_log_path=output_dir / "logs/events.jsonl", run_name=f"{exp.train.run_key}_final")
-
-    state = "finished"
-    error = None
-    try:
-        if logger:
-            logger.start_run(f"{exp.train.run_key}_final", _run_config(exp))
-        runs = run_final_seeds(
-            adapter=adapter,
-            train_ds=_split(dataset, exp.dataset.train_split),
-            val_ds=_split(dataset, exp.dataset.val_split),
-            test_ds=_split(dataset, exp.dataset.test_split),
-            base_train_cfg=exp.train,
-            eval_cfg=exp.eval,
-            hparams=best.hparams,
-            seeds=exp.final.seeds,
-            output_dir=output_dir,
-            evaluate_val=exp.final.evaluate_val,
-            logger=logger,
-        )
-        _write_final_results(runs, out_path)
-        if logger:
-            logger.log_artifact(out_path, name="final_results")
-    except Exception as exc:
-        state = "failed"
-        error = repr(exc)
-        raise
-    finally:
-        if logger:
-            logger.finish_run(state=state, error=error)
+    logger_factory = _child_logger_factory(exp, wandb_group=f"{exp.train.run_key}_final")
+    runs = run_final_seeds(
+        adapter=adapter,
+        train_ds=_split(dataset, exp.dataset.train_split),
+        val_ds=_split(dataset, exp.dataset.val_split),
+        test_ds=_split(dataset, exp.dataset.test_split),
+        base_train_cfg=exp.train,
+        eval_cfg=exp.eval,
+        hparams=best.hparams,
+        seeds=exp.final.seeds,
+        output_dir=output_dir,
+        evaluate_val=exp.final.evaluate_val,
+        logger_factory=logger_factory,
+        run_config=_run_config(exp),
+    )
+    _write_final_results(runs, out_path)
 
     typer.echo(f"Saved final results to {out_path}")
 
@@ -226,6 +212,10 @@ def _adapter(exp: ExperimentConfig):
 
 def _logger(exp: ExperimentConfig, *, default_log_path: Path, run_name: str):
     return logger_from_config(exp.logging, default_log_path=default_log_path, run_name=run_name)
+
+
+def _child_logger_factory(exp: ExperimentConfig, *, wandb_group: str):
+    return child_logger_factory_from_config(exp.logging, wandb_group=wandb_group)
 
 
 def _run_config(exp: ExperimentConfig) -> dict:

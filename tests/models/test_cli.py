@@ -9,7 +9,7 @@ from unittest.mock import patch
 from typer.testing import CliRunner
 
 from obj_det.models import ExperimentConfig
-from obj_det.models.cli import _logger, app
+from obj_det.models.cli import _child_logger_factory, _logger, app
 from obj_det.models.logging import CompositeLogger, LocalJsonLogger
 from obj_det.models.schemas.artifact import ModelArtifact
 
@@ -89,6 +89,48 @@ class CliTest(unittest.TestCase):
         )
 
         self.assertIsNone(_logger(exp, default_log_path=Path("runs/r/logs/events.jsonl"), run_name="r"))
+
+    def test_child_logger_factory_uses_child_name_group_and_path(self):
+        exp = ExperimentConfig.model_validate(
+            {
+                "dataset": {"path": "datasets/tiny"},
+                "classes": ["car"],
+                "transform": {"image_size": 32},
+                "model": {
+                    "key": "m",
+                    "backend": "torchvision",
+                    "model_name_or_path": "fasterrcnn_resnet50_fpn",
+                },
+                "train": {"run_key": "r", "output_dir": "runs/r"},
+                "eval": {},
+                "logging": {
+                    "backends": ["local", "wandb"],
+                    "local": {"path": "runs/shared/events.jsonl"},
+                    "wandb": {
+                        "project": "study",
+                        "group": "configured-group",
+                        "name": "configured-name",
+                        "mode": "offline",
+                    },
+                },
+            }
+        )
+
+        with patch("obj_det.models.logging.factory.WandbLogger") as logger_cls:
+            factory = _child_logger_factory(exp, wandb_group="child-group")
+            logger = factory("child-run", Path("runs/child/logs/events.jsonl"))
+
+        self.assertIsInstance(logger, CompositeLogger)
+        self.assertIsInstance(logger.loggers[0], LocalJsonLogger)
+        self.assertEqual(logger.loggers[0].path, Path("runs/child/logs/events.jsonl"))
+        logger_cls.assert_called_once_with(
+            project="study",
+            entity=None,
+            group="child-group",
+            name="child-run",
+            mode="offline",
+            tags=[],
+        )
 
     def test_train_command_writes_local_log_events(self):
         with TemporaryDirectory() as tmp:
