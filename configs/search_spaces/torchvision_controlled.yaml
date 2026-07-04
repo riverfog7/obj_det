@@ -13,6 +13,6 @@ params:
   momentum:
     type: categorical
     choices: [0.9]
-  scheduler:
+  lr_scheduler_type:
     type: categorical
-    choices: [step, cosine]
+    choices: [linear, cosine]

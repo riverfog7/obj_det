@@ -1,0 +1,5 @@
+key: yolo26s
+backend: ultralytics
+model_name_or_path: yolo26s.pt
+params:
+  task: detect

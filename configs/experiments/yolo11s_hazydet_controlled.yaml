@@ -1,0 +1,68 @@
+dataset:
+  path: datasets/hazydet
+  train_split: train
+  val_split: val
+  test_split: test
+
+model_file: ../models/yolo11s.yaml
+transform_file: ../transforms/basic_640.yaml
+
+classes:
+  - person
+  - bicycle
+  - motorcycle
+  - car
+  - bus
+  - truck
+
+train:
+  run_key: yolo11s_hazydet_controlled
+  label_mode: meta
+  output_dir: runs/yolo11s/hazydet/controlled
+  protocol: controlled
+  max_epochs: 50
+  batch_size: 8
+  eval_strategy:
+    enabled: false
+    every_epochs: 1
+  loader:
+    num_workers: 8
+    pin_memory: true
+    persistent_workers: true
+    prefetch_factor: 2
+    predecode_images: false
+  seed: 0
+  hparams:
+    lr0: 0.003
+    weight_decay: 0.0005
+    momentum: 0.937
+    warmup_epochs: 3
+    cos_lr: true
+
+eval:
+  batch_size: 8
+  conf_threshold: 0.001
+  iou_threshold: 0.7
+
+predict:
+  batch_size: 8
+  conf_threshold: 0.001
+  iou_threshold: 0.7
+
+tuning:
+  study_name: yolo11s_hazydet_controlled
+  n_trials: 10
+  objective_metric: map_50_95
+  output_dir: runs/hpo/yolo11s_hazydet_controlled
+
+logging:
+  backends: [local, wandb]
+  wandb:
+    project: yolo11s_hazydet_controlled
+
+search_space_file: ../search_spaces/yolo_controlled.yaml
+
+final:
+  seeds: [0, 1, 2]
+  output_dir: runs/yolo11s/hazydet/controlled/final
+  evaluate_val: true

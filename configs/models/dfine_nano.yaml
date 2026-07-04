@@ -1,0 +1,4 @@
+key: dfine_nano
+backend: hf_trainer
+model_name_or_path: ustc-community/dfine-nano-coco
+params: {}

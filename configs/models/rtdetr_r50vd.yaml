@@ -1,0 +1,4 @@
+key: rtdetr_r50vd
+backend: hf_trainer
+model_name_or_path: PekingU/rtdetr_r50vd_coco_o365
+params: {}

@@ -269,9 +269,17 @@ print(result.primary_metric, result.primary_metric_value)
 
 Current backend status:
 
-- `torchvision`: Faster R-CNN adapter trained through Hugging Face `Trainer`; no custom PyTorch loop.
+- `torchvision`: Faster R-CNN, RetinaNet, FCOS, and Mask R-CNN box-only through Hugging Face `Trainer`.
 - `hf_trainer`: Transformers `Trainer` adapter with COCO-style image-processor targets and canonical predictions.
 - `ultralytics`: HF-backed Ultralytics `DetectionTrainer` adapter; no YOLO folder export is used.
+
+Model configs live in `configs/models/`. The current controlled matrix includes:
+
+- Ultralytics: YOLO26 n/s/m, YOLO11 n/s/m, YOLOv8 n/s/m.
+- HF Trainer: RT-DETR, D-FINE nano/small, RF-DETR nano/small/medium/base, DETR, Conditional DETR, Deformable DETR, YOLOS tiny/small.
+- TorchVision: Faster R-CNN, RetinaNet, FCOS, and Mask R-CNN box-only.
+
+HazyDet controlled experiment configs live in `configs/experiments/*_hazydet_controlled.yaml`.
 
 Optional backend smoke tests are available with:
 

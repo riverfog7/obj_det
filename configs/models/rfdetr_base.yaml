@@ -1,0 +1,4 @@
+key: rfdetr_base
+backend: hf_trainer
+model_name_or_path: Roboflow/rf-detr-base
+params: {}

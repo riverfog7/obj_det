@@ -4,8 +4,19 @@ from typing import Iterator
 
 import torch
 from datasets import Dataset
-from torchvision.models.detection import FasterRCNN_ResNet50_FPN_Weights, fasterrcnn_resnet50_fpn
+from torchvision.models.detection import (
+    FCOS_ResNet50_FPN_Weights,
+    FasterRCNN_ResNet50_FPN_Weights,
+    MaskRCNN_ResNet50_FPN_Weights,
+    RetinaNet_ResNet50_FPN_Weights,
+    fasterrcnn_resnet50_fpn,
+    fcos_resnet50_fpn,
+    maskrcnn_resnet50_fpn,
+    retinanet_resnet50_fpn,
+)
+from torchvision.models.detection.fcos import FCOSClassificationHead
 from torchvision.models.detection.faster_rcnn import FastRCNNPredictor
+from torchvision.models.detection.retinanet import RetinaNetClassificationHead
 from transformers import Trainer
 
 from obj_det.datasets.models import BBox
@@ -148,22 +159,80 @@ class TorchvisionDetectionAdapter(BaseModelAdapter):
 
     def _build_model(self, *, num_classes: int):
         model_name = str(self.cfg.model_name_or_path)
-        if model_name != "fasterrcnn_resnet50_fpn":
-            raise ValueError("Torchvision backend currently supports only fasterrcnn_resnet50_fpn")
-
-        weights_param = self.cfg.params.get("weights") or self.cfg.weights
-        weights = FasterRCNN_ResNet50_FPN_Weights.DEFAULT if str(weights_param).lower() == "default" else None
         min_size = int(self.cfg.params.get("min_size", 800))
         max_size = int(self.cfg.params.get("max_size", 1333))
-        model = fasterrcnn_resnet50_fpn(
-            weights=weights,
-            weights_backbone=None,
-            min_size=min_size,
-            max_size=max_size,
+
+        if model_name == "fasterrcnn_resnet50_fpn":
+            model = fasterrcnn_resnet50_fpn(
+                weights=self._weights(FasterRCNN_ResNet50_FPN_Weights),
+                weights_backbone=None,
+                min_size=min_size,
+                max_size=max_size,
+            )
+            self._replace_roi_box_predictor(model, num_classes)
+            return model
+
+        if model_name == "retinanet_resnet50_fpn":
+            model = retinanet_resnet50_fpn(
+                weights=self._weights(RetinaNet_ResNet50_FPN_Weights),
+                weights_backbone=None,
+                min_size=min_size,
+                max_size=max_size,
+            )
+            self._replace_anchor_classification_head(model, num_classes)
+            return model
+
+        if model_name == "fcos_resnet50_fpn":
+            model = fcos_resnet50_fpn(
+                weights=self._weights(FCOS_ResNet50_FPN_Weights),
+                weights_backbone=None,
+                min_size=min_size,
+                max_size=max_size,
+            )
+            self._replace_anchor_classification_head(model, num_classes)
+            return model
+
+        if model_name == "maskrcnn_resnet50_fpn":
+            model = maskrcnn_resnet50_fpn(
+                weights=self._weights(MaskRCNN_ResNet50_FPN_Weights),
+                weights_backbone=None,
+                min_size=min_size,
+                max_size=max_size,
+            )
+            self._replace_roi_box_predictor(model, num_classes)
+            self._disable_mask_head(model)
+            return model
+
+        raise ValueError(
+            "Torchvision backend supports: "
+            "fasterrcnn_resnet50_fpn, retinanet_resnet50_fpn, "
+            "fcos_resnet50_fpn, maskrcnn_resnet50_fpn"
         )
+
+    def _weights(self, weights_cls):
+        weights_param = self.cfg.params.get("weights") or self.cfg.weights
+        return weights_cls.DEFAULT if str(weights_param).lower() == "default" else None
+
+    def _replace_roi_box_predictor(self, model, num_classes: int) -> None:
         in_features = model.roi_heads.box_predictor.cls_score.in_features
         model.roi_heads.box_predictor = FastRCNNPredictor(in_features, num_classes)
-        return model
+
+    def _replace_anchor_classification_head(self, model, num_classes: int) -> None:
+        head = model.head.classification_head
+        in_channels = head.cls_logits.in_channels
+        num_anchors = head.num_anchors
+        if isinstance(head, RetinaNetClassificationHead):
+            model.head.classification_head = RetinaNetClassificationHead(in_channels, num_anchors, num_classes)
+            return
+        if isinstance(head, FCOSClassificationHead):
+            model.head.classification_head = FCOSClassificationHead(in_channels, num_anchors, num_classes)
+            return
+        raise TypeError(f"Unsupported TorchVision classification head: {type(head)!r}")
+
+    def _disable_mask_head(self, model) -> None:
+        model.roi_heads.mask_roi_pool = None
+        model.roi_heads.mask_head = None
+        model.roi_heads.mask_predictor = None
 
     def _training_args(self, train_cfg: TrainConfig):
         from transformers import TrainingArguments
