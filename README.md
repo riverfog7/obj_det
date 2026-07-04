@@ -313,8 +313,11 @@ configs/search_spaces/
 configs/experiments/
 ```
 
-Training configs can set `train.loader.num_workers` for parallel loading and
-`train.loader.predecode_images: true` to decode the HF image bytes into RAM before training.
+Training configs can set `train.logging_steps` to control scalar training-log
+cadence for all backends. It means every N training steps/batches; use
+`logging_steps: 1` to log every batch. They can also set
+`train.loader.num_workers` for parallel loading and `train.loader.predecode_images:
+true` to decode the HF image bytes into RAM before training.
 
 Model runs support scalar-only logging for all CLI flows:
 

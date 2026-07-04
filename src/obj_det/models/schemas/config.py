@@ -69,6 +69,7 @@ class TrainConfig(ModelSchema):
     max_epochs: int | None = Field(default=50, gt=0)
     max_steps: int | None = Field(default=None, gt=0)
     batch_size: int = Field(default=16, gt=0)
+    logging_steps: int = Field(default=10, gt=0)
     seed: int = 0
     amp: bool = True
     hparams: dict[str, Any] = Field(default_factory=dict)

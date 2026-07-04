@@ -183,7 +183,11 @@ class HFTrainerDetectionAdapter(BaseModelAdapter):
         hparams = train_cfg.hparams
         max_steps = train_cfg.max_steps if train_cfg.max_steps is not None else -1
         epochs = float(train_cfg.max_epochs or 1)
-        backend_args = train_cfg.backend_params.get("training_args", {})
+        backend_args = {
+            key: value
+            for key, value in train_cfg.backend_params.get("training_args", {}).items()
+            if key != "logging_steps"
+        }
         eval_args = self._eval_strategy_args(train_cfg)
         loader = train_cfg.loader
         loader_args = {
@@ -211,7 +215,7 @@ class HFTrainerDetectionAdapter(BaseModelAdapter):
             eval_strategy=eval_args["eval_strategy"],
             save_strategy="epoch" if max_steps < 0 else "no",
             logging_strategy="steps",
-            logging_steps=int(train_cfg.backend_params.get("logging_steps", 10)),
+            logging_steps=train_cfg.logging_steps,
             report_to=[],
             remove_unused_columns=False,
             load_best_model_at_end=False,

@@ -82,6 +82,7 @@ class UltralyticsDetectionAdapter(BaseModelAdapter):
             max_steps=train_cfg.max_steps,
             logger=logger,
             log_prefix=log_prefix,
+            logging_steps=train_cfg.logging_steps,
         )
         trainer.train()
 
@@ -209,6 +210,7 @@ class UltralyticsDetectionAdapter(BaseModelAdapter):
                 max_steps,
                 logger,
                 log_prefix,
+                logging_steps,
                 **kwargs,
             ):
                 self._hf_train_source = train_source
@@ -218,32 +220,46 @@ class UltralyticsDetectionAdapter(BaseModelAdapter):
                 self._hf_classes = classes
                 self._hf_max_steps = max_steps
                 self._hf_seen_steps = 0
+                self._hf_last_logged_step = 0
                 self._hf_logger = logger
                 self._hf_log_prefix = log_prefix
+                self._hf_logging_steps = logging_steps
                 super().__init__(*args, **kwargs)
 
             def run_callbacks(self, event: str):
                 super().run_callbacks(event)
-                if event == "on_train_batch_end" and self._hf_max_steps is not None:
+                if event == "on_train_batch_end":
                     self._hf_seen_steps += 1
+                    if self._hf_seen_steps % self._hf_logging_steps == 0:
+                        self._log_step_metrics()
+                    if self._hf_max_steps is None:
+                        return
                     if self._hf_seen_steps >= self._hf_max_steps:
                         self.stop = True
-                if event == "on_fit_epoch_end":
-                    self._log_epoch_metrics()
+                elif event == "on_train_end":
+                    self._log_step_metrics(force=True)
 
-            def _log_epoch_metrics(self):
+            def _log_step_metrics(self, *, force: bool = False):
                 if self._hf_logger is None:
                     return
+                if self._hf_seen_steps <= 0:
+                    return
+                if force and self._hf_last_logged_step == self._hf_seen_steps:
+                    return
 
-                row = {"epoch": self.epoch + 1}
+                row = {"step": self._hf_seen_steps}
                 if getattr(self, "tloss", None) is not None:
                     row.update(self.label_loss_items(self.tloss, prefix=self._hf_log_prefix))
-                row.update(getattr(self, "metrics", None) or {})
-                row.update(getattr(self, "lr", None) or {})
+                optimizer = getattr(self, "optimizer", None)
+                if optimizer is not None:
+                    row.update(
+                        {f"lr/pg{idx}": group["lr"] for idx, group in enumerate(optimizer.param_groups) if "lr" in group}
+                    )
 
                 metrics, step = flatten_prefixed_scalar_mapping(self._hf_log_prefix, row)
                 if metrics:
-                    self._hf_logger.log_metrics(metrics, step=step if step is not None else self.epoch + 1)
+                    self._hf_logger.log_metrics(metrics, step=step if step is not None else self._hf_seen_steps)
+                    self._hf_last_logged_step = self._hf_seen_steps
 
             def get_dataset(self):
                 return {

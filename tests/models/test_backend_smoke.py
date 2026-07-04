@@ -59,7 +59,7 @@ class BackendSmokeTest(unittest.TestCase):
                 max_steps=1,
                 batch_size=1,
                 amp=False,
-                backend_params={"logging_steps": 1},
+                logging_steps=1,
             ))
             preds = list(adapter.predict(ds, artifact, PredictConfig(classes=["car"], transform=transform, batch_size=1, conf_threshold=0.0)))
             result = adapter.evaluate(ds, artifact, EvalConfig(classes=["car"], transform=transform, conf_threshold=0.0))

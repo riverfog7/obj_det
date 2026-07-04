@@ -57,6 +57,7 @@ class ExperimentConfigTest(unittest.TestCase):
         self.assertEqual(cfg.train.eval_strategy.every_epochs, 1)
         self.assertEqual(cfg.train.loader.num_workers, 2)
         self.assertTrue(cfg.train.loader.predecode_images)
+        self.assertEqual(cfg.train.logging_steps, 10)
 
     def test_relative_model_transform_and_search_space_files_load(self):
         with TemporaryDirectory() as tmp:
@@ -143,6 +144,26 @@ class ExperimentConfigTest(unittest.TestCase):
                         "run_key": "r",
                         "output_dir": "runs/r",
                         "loader": {"num_workers": -1},
+                    },
+                    "eval": {},
+                }
+            )
+
+        with self.assertRaises(ValidationError):
+            ExperimentConfig.model_validate(
+                {
+                    "dataset": {"path": "datasets/tiny"},
+                    "classes": ["car"],
+                    "transform": {"image_size": 32},
+                    "model": {
+                        "key": "m",
+                        "backend": "torchvision",
+                        "model_name_or_path": "fasterrcnn_resnet50_fpn",
+                    },
+                    "train": {
+                        "run_key": "r",
+                        "output_dir": "runs/r",
+                        "logging_steps": 0,
                     },
                     "eval": {},
                 }

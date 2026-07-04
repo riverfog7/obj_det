@@ -237,6 +237,11 @@ class TorchvisionDetectionAdapter(BaseModelAdapter):
         hparams = train_cfg.hparams
         max_steps = train_cfg.max_steps if train_cfg.max_steps is not None else -1
         epochs = float(train_cfg.max_epochs or 1)
+        backend_args = {
+            key: value
+            for key, value in train_cfg.backend_params.get("training_args", {}).items()
+            if key != "logging_steps"
+        }
         loader = train_cfg.loader
         loader_args = {
             "dataloader_num_workers": loader.num_workers,
@@ -263,12 +268,12 @@ class TorchvisionDetectionAdapter(BaseModelAdapter):
             eval_strategy=self._eval_strategy(train_cfg),
             save_strategy="epoch" if max_steps < 0 else "no",
             logging_strategy="steps",
-            logging_steps=int(train_cfg.backend_params.get("logging_steps", 10)),
+            logging_steps=train_cfg.logging_steps,
             report_to=[],
             remove_unused_columns=False,
             load_best_model_at_end=False,
             **loader_args,
-            **train_cfg.backend_params.get("training_args", {}),
+            **backend_args,
         )
 
     def _eval_strategy(self, train_cfg: TrainConfig) -> str:
