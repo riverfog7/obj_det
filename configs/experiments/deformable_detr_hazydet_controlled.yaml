@@ -22,6 +22,7 @@ train:
   protocol: controlled
   max_epochs: 50
   batch_size: 4
+  logging_steps: 10
   eval_strategy:
     enabled: false
     every_epochs: 1
