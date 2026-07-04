@@ -39,10 +39,9 @@ class BaseModelAdapter(ABC):
             classes=eval_cfg.classes,
             label_mode=eval_cfg.label_mode,
             batch_size=eval_cfg.batch_size,
-            image_size=eval_cfg.image_size,
+            transform=eval_cfg.transform,
             conf_threshold=eval_cfg.conf_threshold,
             iou_threshold=eval_cfg.iou_threshold,
-            augmentation_policy="none",
             backend_params=eval_cfg.backend_params,
         )
         predictions = list(self.predict(ds, artifact, predict_cfg))

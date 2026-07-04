@@ -4,22 +4,18 @@ from .row_parser import HFDetectionRowParser
 from .sample import DetectionBatch, DetectionSample, DetectionTarget
 from .ultralytics_dataset import HFUltralyticsDetectionDataset, ultralytics_detection_collate
 from .transforms import (
-    BasicDetectionTransform,
-    NoOpDetectionTransform,
-    ResizePadDetectionTransform,
+    DetectionTransform,
     bbox_to_original,
     build_detection_transform,
 )
 
 __all__ = [
-    "BasicDetectionTransform",
+    "DetectionTransform",
     "DetectionBatch",
     "DetectionSample",
     "DetectionTarget",
     "HFDetectionRowParser",
     "HFUltralyticsDetectionDataset",
-    "NoOpDetectionTransform",
-    "ResizePadDetectionTransform",
     "bbox_to_original",
     "build_detection_transform",
     "detection_collate",

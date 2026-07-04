@@ -1,5 +1,5 @@
 from .artifact import ModelArtifact
-from .config import BackendName, EvalConfig, LabelMode, ModelConfig, PredictConfig, ProtocolName, TrainConfig
+from .config import BackendName, EvalConfig, LabelMode, ModelConfig, PredictConfig, ProtocolName, TrainConfig, TransformConfig
 from .experiment import DatasetRef, ExperimentConfig, FinalConfig
 from .prediction import PredictionObject, PredictionRecord
 from .result import EvalResult
@@ -22,6 +22,7 @@ __all__ = [
     "ProtocolName",
     "SearchSpace",
     "TrainConfig",
+    "TransformConfig",
     "TrialResult",
     "TuningConfig",
     "TuningResult",

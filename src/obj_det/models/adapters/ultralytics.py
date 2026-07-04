@@ -51,11 +51,7 @@ class UltralyticsDetectionAdapter(BaseModelAdapter):
         set_seed(train_cfg.seed)
         train_cfg.output_dir.mkdir(parents=True, exist_ok=True)
         parser = HFDetectionRowParser(classes=train_cfg.classes, label_mode=train_cfg.label_mode)
-        transform = build_detection_transform(
-            train_cfg.augmentation_policy,
-            train_cfg.image_size,
-            {**train_cfg.backend_params.get("transform_params", {}), "seed": train_cfg.seed},
-        )
+        transform = build_detection_transform(train_cfg.transform, seed=train_cfg.seed)
         batch_size = train_cfg.per_device_batch_size or train_cfg.effective_batch_size
         overrides = self._train_overrides(train_cfg, batch_size=batch_size)
 
@@ -98,11 +94,7 @@ class UltralyticsDetectionAdapter(BaseModelAdapter):
         model = YOLO(str(checkpoint))
         device = predict_cfg.backend_params.get("device")
         parser = HFDetectionRowParser(classes=predict_cfg.classes, label_mode=predict_cfg.label_mode)
-        transform = build_detection_transform(
-            predict_cfg.augmentation_policy,
-            predict_cfg.image_size,
-            predict_cfg.backend_params.get("transform_params", {}),
-        )
+        transform = build_detection_transform(predict_cfg.transform)
         rows = list(ds)
 
         for start in range(0, len(rows), predict_cfg.batch_size):
@@ -110,7 +102,7 @@ class UltralyticsDetectionAdapter(BaseModelAdapter):
             samples = [transform(sample) for sample in originals]
             results = model.predict(
                 source=[sample.image for sample in samples],
-                imgsz=predict_cfg.image_size,
+                imgsz=predict_cfg.transform.image_size,
                 conf=predict_cfg.conf_threshold,
                 iou=predict_cfg.iou_threshold,
                 device=device,
@@ -163,7 +155,7 @@ class UltralyticsDetectionAdapter(BaseModelAdapter):
             "name": train_cfg.output_dir.name,
             "exist_ok": True,
             "epochs": int(train_cfg.max_epochs or 1),
-            "imgsz": int(train_cfg.image_size),
+            "imgsz": int(train_cfg.transform.image_size),
             "batch": int(batch_size),
             "seed": int(train_cfg.seed),
             "amp": bool(train_cfg.amp),

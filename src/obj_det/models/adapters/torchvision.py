@@ -29,11 +29,7 @@ class TorchvisionDetectionAdapter(BaseModelAdapter):
 
         model = self._build_model(num_classes=len(train_cfg.classes) + 1).to(device)
         parser = HFDetectionRowParser(classes=train_cfg.classes, label_mode=train_cfg.label_mode)
-        transform = build_detection_transform(
-            train_cfg.augmentation_policy,
-            train_cfg.image_size,
-            {**train_cfg.backend_params.get("transform_params", {}), "seed": train_cfg.seed},
-        )
+        transform = build_detection_transform(train_cfg.transform, seed=train_cfg.seed)
         batch_size = train_cfg.per_device_batch_size or train_cfg.effective_batch_size
         loader = DataLoader(
             _TorchvisionDataset(train_ds, parser, transform),
@@ -104,11 +100,7 @@ class TorchvisionDetectionAdapter(BaseModelAdapter):
         model.eval()
 
         parser = HFDetectionRowParser(classes=predict_cfg.classes, label_mode=predict_cfg.label_mode)
-        transform = build_detection_transform(
-            predict_cfg.augmentation_policy,
-            predict_cfg.image_size,
-            predict_cfg.backend_params.get("transform_params", {}),
-        )
+        transform = build_detection_transform(predict_cfg.transform)
 
         with torch.no_grad():
             for row in ds:

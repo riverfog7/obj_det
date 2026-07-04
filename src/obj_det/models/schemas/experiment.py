@@ -6,7 +6,7 @@ from typing import Any
 from pydantic import Field, field_validator, model_validator
 
 from .base import ModelSchema
-from .config import EvalConfig, ModelConfig, PredictConfig, TrainConfig, validate_class_list
+from .config import EvalConfig, ModelConfig, PredictConfig, TrainConfig, TransformConfig, validate_class_list
 from .tuning import SearchSpace, TuningConfig
 
 
@@ -38,6 +38,8 @@ class ExperimentConfig(ModelSchema):
 
     model: ModelConfig | None = None
     model_file: Path | None = None
+    transform: TransformConfig | None = None
+    transform_file: Path | None = None
 
     train: TrainConfig
     eval: EvalConfig
@@ -56,7 +58,8 @@ class ExperimentConfig(ModelSchema):
             return data
 
         classes = data.get("classes")
-        if classes is None:
+        transform = data.get("transform")
+        if classes is None and transform is None:
             return data
 
         data = dict(data)
@@ -64,21 +67,23 @@ class ExperimentConfig(ModelSchema):
         eval_cfg = dict(data.get("eval") or {})
         predict = dict(data["predict"]) if data.get("predict") is not None else None
 
-        train.setdefault("classes", classes)
-        eval_cfg.setdefault("classes", classes)
+        if classes is not None:
+            train.setdefault("classes", classes)
+            eval_cfg.setdefault("classes", classes)
 
-        if predict is not None:
-            predict.setdefault("classes", classes)
+            if predict is not None:
+                predict.setdefault("classes", classes)
+
+        if transform is not None:
+            train.setdefault("transform", transform)
+            eval_cfg.setdefault("transform", transform)
+            if predict is not None:
+                predict.setdefault("transform", transform)
 
         if "label_mode" in train:
             eval_cfg.setdefault("label_mode", train["label_mode"])
             if predict is not None:
                 predict.setdefault("label_mode", train["label_mode"])
-
-        if "image_size" in train:
-            eval_cfg.setdefault("image_size", train["image_size"])
-            if predict is not None:
-                predict.setdefault("image_size", train["image_size"])
 
         data["train"] = train
         data["eval"] = eval_cfg
@@ -98,6 +103,8 @@ class ExperimentConfig(ModelSchema):
             raise ValueError("Use either model or model_file, not both")
         if self.model is None and self.model_file is None:
             raise ValueError("Either model or model_file is required")
+        if self.transform is not None and self.transform_file is not None:
+            raise ValueError("Use either transform or transform_file, not both")
         if self.search_space is not None and self.search_space_file is not None:
             raise ValueError("Use either search_space or search_space_file, not both")
         return self

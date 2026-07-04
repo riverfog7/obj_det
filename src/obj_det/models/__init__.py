@@ -11,6 +11,7 @@ from .schemas import (
     PredictConfig,
     SearchSpace,
     TrainConfig,
+    TransformConfig,
     TuningConfig,
     TuningResult,
 )
@@ -28,6 +29,7 @@ __all__ = [
     "PredictConfig",
     "SearchSpace",
     "TrainConfig",
+    "TransformConfig",
     "TuningConfig",
     "TuningResult",
 ]

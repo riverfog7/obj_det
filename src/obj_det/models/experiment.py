@@ -4,7 +4,7 @@ from pathlib import Path
 import yaml
 
 from obj_det.models.schemas.artifact import ModelArtifact
-from obj_det.models.schemas.config import ModelConfig
+from obj_det.models.schemas.config import ModelConfig, TransformConfig
 from obj_det.models.schemas.experiment import ExperimentConfig
 from obj_det.models.schemas.result import EvalResult
 from obj_det.models.schemas.tuning import BestTrial, SearchSpace, TuningResult
@@ -12,7 +12,16 @@ from obj_det.models.schemas.tuning import BestTrial, SearchSpace, TuningResult
 
 def load_experiment_config(path: Path) -> ExperimentConfig:
     path = Path(path)
-    cfg = ExperimentConfig.model_validate(_read_yaml_mapping(path))
+    data = _read_yaml_mapping(path)
+
+    if data.get("transform_file") is not None:
+        if data.get("transform") is not None:
+            raise ValueError("Use either transform or transform_file, not both")
+        transform_path = _resolve(path.parent, Path(data["transform_file"]))
+        data["transform"] = _read_yaml_mapping(transform_path)
+        data.pop("transform_file")
+
+    cfg = ExperimentConfig.model_validate(data)
 
     if cfg.model_file is not None:
         model_path = _resolve(path.parent, cfg.model_file)
@@ -27,6 +36,10 @@ def load_experiment_config(path: Path) -> ExperimentConfig:
 
 def load_model_config(path: Path) -> ModelConfig:
     return ModelConfig.model_validate(_read_yaml_mapping(Path(path)))
+
+
+def load_transform_config(path: Path) -> TransformConfig:
+    return TransformConfig.model_validate(_read_yaml_mapping(Path(path)))
 
 
 def load_search_space(path: Path) -> SearchSpace:

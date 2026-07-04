@@ -38,20 +38,25 @@ class ModelConfig(ModelSchema):
         return value
 
 
+class TransformConfig(ModelSchema):
+    image_size: int = Field(gt=0)
+    horizontal_flip_p: float = Field(default=0.0, ge=0.0, le=1.0)
+    color_jitter_strength: float = Field(default=0.0, ge=0.0)
+
+
 class TrainConfig(ModelSchema):
     run_key: str
     classes: list[str]
     label_mode: LabelMode = "meta"
     output_dir: Path
     protocol: ProtocolName = "controlled"
-    image_size: int = Field(default=640, gt=0)
+    transform: TransformConfig
     max_epochs: int | None = Field(default=50, gt=0)
     max_steps: int | None = Field(default=None, gt=0)
     effective_batch_size: int = Field(default=16, gt=0)
     per_device_batch_size: int | None = Field(default=None, gt=0)
     gradient_accumulation_steps: int | None = Field(default=None, gt=0)
     seed: int = 0
-    augmentation_policy: str = "basic"
     eval_metric: str = "map_50_95"
     eval_every_epochs: int = Field(default=1, gt=0)
     amp: bool = True
@@ -76,10 +81,9 @@ class PredictConfig(ModelSchema):
     classes: list[str]
     label_mode: LabelMode = "meta"
     batch_size: int = Field(default=8, gt=0)
-    image_size: int = Field(default=640, gt=0)
+    transform: TransformConfig
     conf_threshold: float = Field(default=0.001, ge=0.0, le=1.0)
     iou_threshold: float = Field(default=0.7, ge=0.0, le=1.0)
-    augmentation_policy: str = "none"
     backend_params: dict[str, Any] = Field(default_factory=dict)
 
     @field_validator("classes")
@@ -92,7 +96,7 @@ class EvalConfig(ModelSchema):
     classes: list[str]
     label_mode: LabelMode = "meta"
     batch_size: int = Field(default=8, gt=0)
-    image_size: int = Field(default=640, gt=0)
+    transform: TransformConfig
     conf_threshold: float = Field(default=0.001, ge=0.0, le=1.0)
     iou_threshold: float = Field(default=0.7, ge=0.0, le=1.0)
     compute_per_class: bool = True
