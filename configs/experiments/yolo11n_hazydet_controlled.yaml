@@ -1,7 +1,7 @@
 dataset:
   path: datasets/hazydet
   train_split: train
-  val_split: validation
+  val_split: val
   test_split: test
 
 model_file: ../models/yolo11n.yaml
