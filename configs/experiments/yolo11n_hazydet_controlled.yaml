@@ -5,6 +5,7 @@ dataset:
   test_split: test
 
 model_file: ../models/yolo11n.yaml
+transform_file: ../transforms/basic_640.yaml
 
 classes:
   - person
@@ -19,13 +20,11 @@ train:
   label_mode: meta
   output_dir: runs/yolo11n/hazydet/controlled
   protocol: controlled
-  image_size: 640
   max_epochs: 50
   effective_batch_size: 16
   per_device_batch_size: 8
   gradient_accumulation_steps: 2
   seed: 0
-  augmentation_policy: basic
   eval_metric: map_50_95
   hparams:
     lr0: 0.003
