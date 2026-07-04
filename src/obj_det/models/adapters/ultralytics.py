@@ -50,14 +50,16 @@ class UltralyticsDetectionAdapter(BaseModelAdapter):
         except ImportError as exc:
             raise ImportError("Install the models extra to use backend='ultralytics'.") from exc
 
+        if train_cfg.eval_strategy.enabled:
+            raise NotImplementedError("Ultralytics train-time eval_strategy is not implemented yet")
+
         set_seed(train_cfg.seed)
         train_cfg.output_dir.mkdir(parents=True, exist_ok=True)
         parser = HFDetectionRowParser(classes=train_cfg.classes, label_mode=train_cfg.label_mode)
         transform = build_detection_transform(train_cfg.transform, seed=train_cfg.seed)
         train_source = DetectionSampleSource(train_ds, parser, predecode_images=train_cfg.loader.predecode_images)
         val_source = DetectionSampleSource(val_ds, parser, predecode_images=train_cfg.loader.predecode_images)
-        batch_size = train_cfg.per_device_batch_size or train_cfg.effective_batch_size
-        overrides = self._train_overrides(train_cfg, batch_size=batch_size)
+        overrides = self._train_overrides(train_cfg)
 
         trainer_cls = self._trainer_class(DetectionTrainer)
         trainer = trainer_cls(
@@ -147,7 +149,7 @@ class UltralyticsDetectionAdapter(BaseModelAdapter):
                     predictions=predictions,
                 )
 
-    def _train_overrides(self, train_cfg: TrainConfig, *, batch_size: int) -> dict:
+    def _train_overrides(self, train_cfg: TrainConfig) -> dict:
         hparams = train_cfg.hparams
         project = train_cfg.output_dir.parent if train_cfg.output_dir.parent != Path("") else Path(".")
         overrides = {
@@ -160,7 +162,7 @@ class UltralyticsDetectionAdapter(BaseModelAdapter):
             "exist_ok": True,
             "epochs": int(train_cfg.max_epochs or 1),
             "imgsz": int(train_cfg.transform.image_size),
-            "batch": int(batch_size),
+            "batch": int(train_cfg.batch_size),
             "seed": int(train_cfg.seed),
             "amp": bool(train_cfg.amp),
             "workers": int(train_cfg.loader.num_workers),

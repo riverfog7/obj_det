@@ -169,12 +169,11 @@ class HFTrainerDetectionAdapter(BaseModelAdapter):
     def _training_args(self, train_cfg: TrainConfig):
         from transformers import TrainingArguments
 
-        batch_size = train_cfg.per_device_batch_size or train_cfg.effective_batch_size
-        grad_accum = train_cfg.gradient_accumulation_steps or max(1, train_cfg.effective_batch_size // batch_size)
         hparams = train_cfg.hparams
         max_steps = train_cfg.max_steps if train_cfg.max_steps is not None else -1
         epochs = float(train_cfg.max_epochs or 1)
         backend_args = train_cfg.backend_params.get("training_args", {})
+        eval_args = self._eval_strategy_args(train_cfg)
         loader = train_cfg.loader
         loader_args = {
             "dataloader_num_workers": loader.num_workers,
@@ -188,9 +187,9 @@ class HFTrainerDetectionAdapter(BaseModelAdapter):
             output_dir=str(train_cfg.output_dir),
             num_train_epochs=epochs,
             max_steps=max_steps,
-            per_device_train_batch_size=batch_size,
-            per_device_eval_batch_size=batch_size,
-            gradient_accumulation_steps=grad_accum,
+            per_device_train_batch_size=train_cfg.batch_size,
+            per_device_eval_batch_size=train_cfg.batch_size,
+            gradient_accumulation_steps=1,
             learning_rate=float(hparams.get("learning_rate", 5e-5)),
             weight_decay=float(hparams.get("weight_decay", 0.0)),
             warmup_ratio=float(hparams.get("warmup_ratio", 0.0)),
@@ -198,7 +197,7 @@ class HFTrainerDetectionAdapter(BaseModelAdapter):
             max_grad_norm=float(hparams.get("max_grad_norm", 1.0)),
             seed=train_cfg.seed,
             fp16=bool(train_cfg.amp and torch.cuda.is_available()),
-            eval_strategy="no",
+            eval_strategy=eval_args["eval_strategy"],
             save_strategy="epoch" if max_steps < 0 else "no",
             logging_strategy="steps",
             logging_steps=int(train_cfg.backend_params.get("logging_steps", 10)),
@@ -208,6 +207,15 @@ class HFTrainerDetectionAdapter(BaseModelAdapter):
             **loader_args,
             **backend_args,
         )
+
+    def _eval_strategy_args(self, train_cfg: TrainConfig) -> dict[str, str]:
+        if not train_cfg.eval_strategy.enabled:
+            return {"eval_strategy": "no"}
+
+        if train_cfg.eval_strategy.every_epochs != 1:
+            raise NotImplementedError("HF Trainer eval_strategy currently supports every_epochs=1 only")
+
+        return {"eval_strategy": "epoch"}
 
     def _label_maps(self, classes: list[str]) -> tuple[dict[int, str], dict[str, int]]:
         id2label = {idx: label for idx, label in enumerate(classes)}

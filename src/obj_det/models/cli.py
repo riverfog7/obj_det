@@ -18,6 +18,7 @@ from obj_det.models.experiment import (
 )
 from obj_det.models.schemas.artifact import ModelArtifact
 from obj_det.models.schemas.experiment import ExperimentConfig
+from obj_det.models.logging.wandb import WandbLogger
 from obj_det.models.tuning.final import FinalSeedRun, run_final_seeds
 from obj_det.models.tuning.runner import TuningRunner
 
@@ -91,7 +92,7 @@ def optimize(
     dataset = load_from_disk(exp.dataset.path)
     adapter = _adapter(exp)
 
-    result = TuningRunner().optimize(
+    result = TuningRunner(logger=_tuning_logger(exp)).optimize(
         adapter=adapter,
         train_ds=_split(dataset, exp.dataset.train_split),
         val_ds=_split(dataset, exp.dataset.val_split),
@@ -158,6 +159,12 @@ def _adapter(exp: ExperimentConfig):
     from obj_det.models.adapters.factory import model_adapter_from_config
 
     return model_adapter_from_config(_model(exp))
+
+
+def _tuning_logger(exp: ExperimentConfig):
+    if exp.tuning is None or not exp.tuning.log_to_wandb:
+        return None
+    return WandbLogger(project=exp.tuning.study_name)
 
 
 def _split(dataset, split: str):

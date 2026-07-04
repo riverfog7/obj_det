@@ -1,6 +1,7 @@
 from .schemas import (
     DatasetRef,
     DataLoaderConfig,
+    EvalStrategyConfig,
     EvalConfig,
     EvalResult,
     ExperimentConfig,
@@ -20,6 +21,7 @@ from .schemas import (
 __all__ = [
     "DatasetRef",
     "DataLoaderConfig",
+    "EvalStrategyConfig",
     "EvalConfig",
     "EvalResult",
     "ExperimentConfig",

@@ -253,7 +253,7 @@ train_cfg = TrainConfig(
     transform=transform,
     loader=DataLoaderConfig(num_workers=4, persistent_workers=True, prefetch_factor=2),
     max_epochs=50,
-    effective_batch_size=16,
+    batch_size=16,
 )
 
 eval_cfg = EvalConfig(

@@ -52,6 +52,11 @@ class DataLoaderConfig(ModelSchema):
     predecode_images: bool = False
 
 
+class EvalStrategyConfig(ModelSchema):
+    enabled: bool = False
+    every_epochs: int = Field(default=1, gt=0)
+
+
 class TrainConfig(ModelSchema):
     run_key: str
     classes: list[str]
@@ -60,14 +65,11 @@ class TrainConfig(ModelSchema):
     protocol: ProtocolName = "controlled"
     transform: TransformConfig
     loader: DataLoaderConfig = Field(default_factory=DataLoaderConfig)
+    eval_strategy: EvalStrategyConfig = Field(default_factory=EvalStrategyConfig)
     max_epochs: int | None = Field(default=50, gt=0)
     max_steps: int | None = Field(default=None, gt=0)
-    effective_batch_size: int = Field(default=16, gt=0)
-    per_device_batch_size: int | None = Field(default=None, gt=0)
-    gradient_accumulation_steps: int | None = Field(default=None, gt=0)
+    batch_size: int = Field(default=16, gt=0)
     seed: int = 0
-    eval_metric: str = "map_50_95"
-    eval_every_epochs: int = Field(default=1, gt=0)
     amp: bool = True
     hparams: dict[str, Any] = Field(default_factory=dict)
     backend_params: dict[str, Any] = Field(default_factory=dict)

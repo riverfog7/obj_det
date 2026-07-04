@@ -30,6 +30,10 @@ class ExperimentConfigTest(unittest.TestCase):
                     "run_key": "r",
                     "label_mode": "meta",
                     "output_dir": "runs/r",
+                    "eval_strategy": {
+                        "enabled": True,
+                        "every_epochs": 1,
+                    },
                     "loader": {
                         "num_workers": 2,
                         "pin_memory": True,
@@ -49,6 +53,8 @@ class ExperimentConfigTest(unittest.TestCase):
         self.assertEqual(cfg.eval.label_mode, "meta")
         self.assertEqual(cfg.predict.transform.image_size, 320)
         self.assertEqual(cfg.train.transform.horizontal_flip_p, 0.5)
+        self.assertTrue(cfg.train.eval_strategy.enabled)
+        self.assertEqual(cfg.train.eval_strategy.every_epochs, 1)
         self.assertEqual(cfg.train.loader.num_workers, 2)
         self.assertTrue(cfg.train.loader.predecode_images)
 
@@ -161,6 +167,59 @@ class ExperimentConfigTest(unittest.TestCase):
                     "eval": {},
                 }
             )
+
+    def test_rejects_removed_train_fields(self):
+        removed_fields = {
+            "gradient_accumulation_steps": 2,
+            "effective_batch_size": 16,
+            "per_device_batch_size": 8,
+            "eval_metric": "map_50_95",
+            "eval_every_epochs": 1,
+        }
+
+        for field, value in removed_fields.items():
+            with self.subTest(field=field), self.assertRaises(ValidationError):
+                ExperimentConfig.model_validate(
+                    {
+                        "dataset": {"path": "datasets/tiny"},
+                        "classes": ["car"],
+                        "transform": {"image_size": 32},
+                        "model": {
+                            "key": "m",
+                            "backend": "torchvision",
+                            "model_name_or_path": "fasterrcnn_resnet50_fpn",
+                        },
+                        "train": {
+                            "run_key": "r",
+                            "output_dir": "runs/r",
+                            field: value,
+                        },
+                        "eval": {},
+                    }
+                )
+
+    def test_tuning_log_to_wandb_loads(self):
+        cfg = ExperimentConfig.model_validate(
+            {
+                "dataset": {"path": "datasets/tiny"},
+                "classes": ["car"],
+                "transform": {"image_size": 32},
+                "model": {
+                    "key": "m",
+                    "backend": "torchvision",
+                    "model_name_or_path": "fasterrcnn_resnet50_fpn",
+                },
+                "train": {"run_key": "r", "output_dir": "runs/r"},
+                "eval": {},
+                "tuning": {
+                    "study_name": "s",
+                    "output_dir": "runs/hpo",
+                    "log_to_wandb": True,
+                },
+            }
+        )
+
+        self.assertTrue(cfg.tuning.log_to_wandb)
 
     def test_rejects_duplicate_model_transform_or_search_space_source(self):
         base = {

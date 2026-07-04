@@ -21,17 +21,17 @@ train:
   output_dir: runs/yolo11n/hazydet/controlled
   protocol: controlled
   max_epochs: 50
-  effective_batch_size: 16
-  per_device_batch_size: 8
-  gradient_accumulation_steps: 2
+  batch_size: 8
+  eval_strategy:
+    enabled: false
+    every_epochs: 1
   loader:
     num_workers: 8
     pin_memory: true
     persistent_workers: true
     prefetch_factor: 2
-    predecode_images: true
+    predecode_images: false
   seed: 0
-  eval_metric: map_50_95
   hparams:
     lr0: 0.003
     weight_decay: 0.0005
@@ -54,7 +54,7 @@ tuning:
   n_trials: 10
   objective_metric: map_50_95
   output_dir: runs/hpo/yolo11n_hazydet_controlled
-  log_to_wandb: false
+  log_to_wandb: true
 
 search_space_file: ../search_spaces/yolo_controlled.yaml
 

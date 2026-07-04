@@ -2,6 +2,7 @@ from .artifact import ModelArtifact
 from .config import (
     BackendName,
     DataLoaderConfig,
+    EvalStrategyConfig,
     EvalConfig,
     LabelMode,
     ModelConfig,
@@ -20,6 +21,7 @@ __all__ = [
     "BestTrial",
     "DatasetRef",
     "DataLoaderConfig",
+    "EvalStrategyConfig",
     "EvalConfig",
     "EvalResult",
     "ExperimentConfig",

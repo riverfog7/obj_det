@@ -2,7 +2,16 @@ from __future__ import annotations
 
 import unittest
 
-from obj_det.models import DataLoaderConfig, EvalConfig, ExperimentConfig, ModelConfig, SearchSpace, TrainConfig, TransformConfig
+from obj_det.models import (
+    DataLoaderConfig,
+    EvalConfig,
+    EvalStrategyConfig,
+    ExperimentConfig,
+    ModelConfig,
+    SearchSpace,
+    TrainConfig,
+    TransformConfig,
+)
 from obj_det.models.adapters.factory import model_adapter_from_config
 
 
@@ -17,6 +26,7 @@ class ImportTest(unittest.TestCase):
         transform = TransformConfig(image_size=32)
         self.assertEqual(adapter.key, "fasterrcnn")
         self.assertEqual(EvalConfig(classes=["car"], transform=transform).classes, ["car"])
+        self.assertFalse(EvalStrategyConfig().enabled)
         self.assertEqual(DataLoaderConfig(num_workers=2).num_workers, 2)
         self.assertEqual(SearchSpace().params, {})
         self.assertEqual(TrainConfig(run_key="r", classes=["car"], output_dir="/tmp/x", transform=transform).label_mode, "meta")

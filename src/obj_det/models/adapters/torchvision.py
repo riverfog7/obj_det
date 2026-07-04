@@ -25,6 +25,9 @@ from obj_det.models.utils.repro import set_seed
 
 class TorchvisionDetectionAdapter(BaseModelAdapter):
     def train(self, train_ds: Dataset, val_ds: Dataset, train_cfg: TrainConfig) -> ModelArtifact:
+        if train_cfg.eval_strategy.enabled:
+            raise NotImplementedError("TorchVision train-time eval_strategy is not implemented yet")
+
         set_seed(train_cfg.seed)
         device = self._device(train_cfg.backend_params)
         train_cfg.output_dir.mkdir(parents=True, exist_ok=True)
@@ -33,10 +36,9 @@ class TorchvisionDetectionAdapter(BaseModelAdapter):
         parser = HFDetectionRowParser(classes=train_cfg.classes, label_mode=train_cfg.label_mode)
         transform = build_detection_transform(train_cfg.transform, seed=train_cfg.seed)
         train_source = DetectionSampleSource(train_ds, parser, predecode_images=train_cfg.loader.predecode_images)
-        batch_size = train_cfg.per_device_batch_size or train_cfg.effective_batch_size
         loader = DataLoader(
             _TorchvisionDataset(train_source, transform),
-            batch_size=batch_size,
+            batch_size=train_cfg.batch_size,
             shuffle=True,
             collate_fn=_collate,
             **dataloader_kwargs(train_cfg.loader),
