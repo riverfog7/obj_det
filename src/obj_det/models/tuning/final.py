@@ -66,6 +66,7 @@ def run_final_seeds(
                         },
                     },
                 )
+                logger.log_metrics({"run/started": 1}, step=0)
             artifact = adapter.train(train_ds, val_ds, train_cfg, logger=logger, log_prefix="train")
             val_result = (
                 adapter.evaluate(val_ds, artifact, eval_cfg, logger=logger, log_prefix="val")

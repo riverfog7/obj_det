@@ -17,7 +17,7 @@ from torchvision.models.detection import (
 from torchvision.models.detection.fcos import FCOSClassificationHead
 from torchvision.models.detection.faster_rcnn import FastRCNNPredictor
 from torchvision.models.detection.retinanet import RetinaNetClassificationHead
-from transformers import Trainer
+from transformers import Trainer, TrainerCallback
 
 from obj_det.datasets.models import BBox
 from obj_det.models.adapters.base import BaseModelAdapter
@@ -27,7 +27,7 @@ from obj_det.models.data.sample import DetectionSample
 from obj_det.models.data.sample_source import DetectionSampleSource
 from obj_det.models.data.transforms import bbox_to_original, build_detection_transform
 from obj_det.models.logging.base import BaseExperimentLogger
-from obj_det.models.logging.metrics import flatten_scalar_mapping
+from obj_det.models.logging.trainer_callback import make_transformers_logging_callback
 from obj_det.models.schemas.artifact import ModelArtifact
 from obj_det.models.schemas.config import PredictConfig, TrainConfig
 from obj_det.models.schemas.prediction import PredictionObject, PredictionRecord
@@ -60,6 +60,7 @@ class TorchvisionDetectionAdapter(BaseModelAdapter):
             eval_dataset=_TorchvisionTrainerDataset(val_source, transform),
             data_collator=_torchvision_collate,
             train_cfg=train_cfg,
+            callbacks=[make_transformers_logging_callback(TrainerCallback, logger, log_prefix)] if logger else None,
         )
         trainer.train()
 
@@ -80,10 +81,6 @@ class TorchvisionDetectionAdapter(BaseModelAdapter):
                 if "train_loss" in row:
                     train_loss = float(row["train_loss"])
                     break
-            if logger is not None:
-                for row in trainer.state.log_history:
-                    metrics, step = flatten_scalar_mapping(log_prefix, row)
-                    logger.log_metrics(metrics, step=step)
 
         return ModelArtifact(
             model_key=self.key,

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import csv
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Iterator
@@ -16,7 +15,7 @@ from obj_det.models.data.sample_source import DetectionSampleSource
 from obj_det.models.data.ultralytics_dataset import HFUltralyticsDetectionDataset, ultralytics_detection_collate
 from obj_det.models.data.transforms import bbox_to_original, build_detection_transform
 from obj_det.models.logging.base import BaseExperimentLogger
-from obj_det.models.logging.metrics import flatten_scalar_mapping
+from obj_det.models.logging.metrics import flatten_prefixed_scalar_mapping
 from obj_det.models.schemas.artifact import ModelArtifact
 from obj_det.models.schemas.config import PredictConfig, TrainConfig
 from obj_det.models.schemas.prediction import PredictionObject, PredictionRecord
@@ -81,10 +80,10 @@ class UltralyticsDetectionAdapter(BaseModelAdapter):
             loader_cfg=train_cfg.loader,
             classes=train_cfg.classes,
             max_steps=train_cfg.max_steps,
+            logger=logger,
+            log_prefix=log_prefix,
         )
         trainer.train()
-        if logger is not None:
-            self._log_results_csv(Path(trainer.save_dir) / "results.csv", logger, log_prefix)
 
         checkpoint_path = trainer.best if trainer.best.exists() else trainer.last
         return ModelArtifact(
@@ -197,19 +196,21 @@ class UltralyticsDetectionAdapter(BaseModelAdapter):
         overrides.update(train_cfg.backend_params.get("overrides", {}))
         return overrides
 
-    def _log_results_csv(self, path: Path, logger: BaseExperimentLogger, log_prefix: str) -> None:
-        if not path.exists():
-            return
-        with path.open("r", encoding="utf-8", newline="") as f:
-            reader = csv.DictReader(f)
-            for idx, row in enumerate(reader):
-                cleaned = {key.strip(): value for key, value in row.items() if key is not None}
-                metrics, step = flatten_scalar_mapping(log_prefix, cleaned)
-                logger.log_metrics(metrics, step=step if step is not None else idx)
-
     def _trainer_class(self, detection_trainer_cls):
         class HFBackedDetectionTrainer(detection_trainer_cls):
-            def __init__(self, *args, train_source, val_source, transform, loader_cfg, classes, max_steps, **kwargs):
+            def __init__(
+                self,
+                *args,
+                train_source,
+                val_source,
+                transform,
+                loader_cfg,
+                classes,
+                max_steps,
+                logger,
+                log_prefix,
+                **kwargs,
+            ):
                 self._hf_train_source = train_source
                 self._hf_val_source = val_source
                 self._hf_transform = transform
@@ -217,6 +218,8 @@ class UltralyticsDetectionAdapter(BaseModelAdapter):
                 self._hf_classes = classes
                 self._hf_max_steps = max_steps
                 self._hf_seen_steps = 0
+                self._hf_logger = logger
+                self._hf_log_prefix = log_prefix
                 super().__init__(*args, **kwargs)
 
             def run_callbacks(self, event: str):
@@ -225,6 +228,22 @@ class UltralyticsDetectionAdapter(BaseModelAdapter):
                     self._hf_seen_steps += 1
                     if self._hf_seen_steps >= self._hf_max_steps:
                         self.stop = True
+                if event == "on_fit_epoch_end":
+                    self._log_epoch_metrics()
+
+            def _log_epoch_metrics(self):
+                if self._hf_logger is None:
+                    return
+
+                row = {"epoch": self.epoch + 1}
+                if getattr(self, "tloss", None) is not None:
+                    row.update(self.label_loss_items(self.tloss, prefix=self._hf_log_prefix))
+                row.update(getattr(self, "metrics", None) or {})
+                row.update(getattr(self, "lr", None) or {})
+
+                metrics, step = flatten_prefixed_scalar_mapping(self._hf_log_prefix, row)
+                if metrics:
+                    self._hf_logger.log_metrics(metrics, step=step if step is not None else self.epoch + 1)
 
             def get_dataset(self):
                 return {

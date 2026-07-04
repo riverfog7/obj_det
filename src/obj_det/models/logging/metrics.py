@@ -59,6 +59,39 @@ def flatten_scalar_mapping(prefix: str, row: dict[str, Any]) -> tuple[dict[str, 
     return metrics, step
 
 
+def flatten_prefixed_scalar_mapping(prefix: str, row: dict[str, Any]) -> tuple[dict[str, int | float | bool], int | None]:
+    """
+    Flatten scalar training rows without duplicating an existing prefix.
+
+    Ultralytics rows commonly already contain keys such as ``train/box_loss``.
+    The generic flatten_scalar_mapping("train", row) would turn that into
+    ``train/train_box_loss``. This helper keeps it as ``train/box_loss`` while
+    still prefixing unqualified keys such as ``loss``.
+    """
+    step = None
+    raw_step = row.get("step", row.get("epoch"))
+    step_value = scalar_or_none(raw_step)
+    if not isinstance(step_value, bool) and step_value is not None:
+        step = int(step_value)
+
+    base = sanitize_metric_part(prefix.strip("/") or "metrics")
+    metrics: dict[str, int | float | bool] = {}
+    for key, value in row.items():
+        if key in {"step"}:
+            continue
+        scalar = scalar_or_none(value)
+        if scalar is None:
+            continue
+
+        parts = [sanitize_metric_part(part) for part in str(key).split("/") if part.strip()]
+        if not parts:
+            continue
+        metric_key = "/".join(parts) if parts[0] == base else f"{base}/{'/'.join(parts)}"
+        metrics[metric_key] = scalar
+
+    return metrics, step
+
+
 def flatten_eval_result(result: EvalResult, prefix: str | None = None) -> dict[str, int | float | bool]:
     base = prefix or f"eval/{sanitize_metric_part(result.split or 'unknown')}"
     metrics: dict[str, int | float | bool] = {}

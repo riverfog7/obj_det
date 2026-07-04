@@ -43,6 +43,7 @@ def train(
     try:
         if logger:
             logger.start_run(exp.train.run_key, _run_config(exp))
+            logger.log_metrics({"run/started": 1}, step=0)
         artifact = adapter.train(
             train_ds=_split(dataset, exp.dataset.train_split),
             val_ds=_split(dataset, exp.dataset.val_split),
@@ -98,6 +99,7 @@ def evaluate(
     try:
         if logger:
             logger.start_run(f"{artifact_obj.run_key}_eval_{split}", _run_config(exp))
+            logger.log_metrics({"run/started": 1}, step=0)
         result = adapter.evaluate(
             _split(dataset, split),
             artifact_obj,

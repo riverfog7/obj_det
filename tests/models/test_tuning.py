@@ -3,15 +3,18 @@ from __future__ import annotations
 import sys
 import types
 import unittest
+import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from datasets import Dataset
 
 from obj_det.models.adapters.base import BaseModelAdapter
+from obj_det.models.logging.factory import child_logger_factory_from_config
 from obj_det.models.schemas import EvalConfig, ModelConfig, SearchSpace, TrainConfig, TransformConfig, TuningConfig
 from obj_det.models.schemas.artifact import ModelArtifact
 from obj_det.models.schemas.config import PredictConfig
+from obj_det.models.schemas.logging import LoggingConfig
 from obj_det.models.schemas.prediction import PredictionRecord
 from obj_det.models.schemas.result import EvalResult
 from obj_det.models.tuning.final import run_final_seeds
@@ -279,6 +282,37 @@ class TuningTest(unittest.TestCase):
         self.assertEqual(logger_factory.loggers[0].events[-1][0], "finish_run")
         self.assertEqual(logger_factory.loggers[0].events[-1][1], "failed")
         self.assertEqual(logger_factory.loggers[1].events[-1][1], "finished")
+
+    def test_hpo_writes_local_child_log_file(self):
+        sys.modules["optuna"] = FakeOptuna([
+            {"score": 0.3, "fail": False},
+        ])
+        ds = Dataset.from_list([row()])
+        adapter = DummyAdapter()
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            transform = TransformConfig(image_size=32)
+            factory = child_logger_factory_from_config(LoggingConfig(backends=["local"]), wandb_group="s")
+            TuningRunner(logger_factory=factory).optimize(
+                adapter=adapter,
+                train_ds=ds,
+                val_ds=ds,
+                base_train_cfg=TrainConfig(run_key="r", classes=["car"], output_dir=root / "base", transform=transform),
+                eval_cfg=EvalConfig(classes=["car"], transform=transform),
+                search_space=SearchSpace(params={
+                    "score": {"type": "float", "low": 0.0, "high": 1.0},
+                    "fail": {"type": "categorical", "choices": [True, False]},
+                }),
+                tuning_cfg=TuningConfig(study_name="s", n_trials=1, output_dir=root / "hpo"),
+            )
+            log_path = root / "hpo" / "trial_0000" / "logs" / "events.jsonl"
+            rows = [json.loads(line) for line in log_path.read_text(encoding="utf-8").splitlines()]
+
+        self.assertEqual(rows[0]["event"], "start_run")
+        self.assertTrue(any(row["event"] == "metrics" and "run/started" in row["metrics"] for row in rows))
+        self.assertTrue(any(row["event"] == "metrics" and "train/dummy_loss" in row["metrics"] for row in rows))
+        self.assertTrue(any(row["event"] == "metrics" and "objective/map_50_95" in row["metrics"] for row in rows))
+        self.assertEqual(rows[-1]["event"], "finish_run")
 
     def test_final_seeds_runs_all_seeds_without_picking_best(self):
         ds = Dataset.from_list([row()])

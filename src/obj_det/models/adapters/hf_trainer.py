@@ -15,7 +15,7 @@ from obj_det.models.data.row_parser import HFDetectionRowParser
 from obj_det.models.data.sample_source import DetectionSampleSource
 from obj_det.models.data.transforms import bbox_to_original, build_detection_transform
 from obj_det.models.logging.base import BaseExperimentLogger
-from obj_det.models.logging.metrics import flatten_scalar_mapping
+from obj_det.models.logging.trainer_callback import make_transformers_logging_callback
 from obj_det.models.schemas.artifact import ModelArtifact
 from obj_det.models.schemas.config import PredictConfig, TrainConfig
 from obj_det.models.schemas.prediction import PredictionObject, PredictionRecord
@@ -35,7 +35,7 @@ class HFTrainerDetectionAdapter(BaseModelAdapter):
         log_prefix: str = "train",
     ) -> ModelArtifact:
         try:
-            from transformers import AutoImageProcessor, AutoModelForObjectDetection, Trainer, TrainingArguments
+            from transformers import AutoImageProcessor, AutoModelForObjectDetection, Trainer, TrainerCallback, TrainingArguments
         except ImportError as exc:
             raise ImportError("Install the models extra to use backend='hf_trainer'.") from exc
 
@@ -72,6 +72,7 @@ class HFTrainerDetectionAdapter(BaseModelAdapter):
             eval_dataset=val_data,
             data_collator=hf_detection_collate,
             processing_class=processor,
+            callbacks=[make_transformers_logging_callback(TrainerCallback, logger, log_prefix)] if logger else None,
         )
         trainer.train()
 
@@ -86,10 +87,6 @@ class HFTrainerDetectionAdapter(BaseModelAdapter):
                 if "train_loss" in row:
                     train_loss = float(row["train_loss"])
                     break
-            if logger is not None:
-                for row in trainer.state.log_history:
-                    metrics, step = flatten_scalar_mapping(log_prefix, row)
-                    logger.log_metrics(metrics, step=step)
 
         return ModelArtifact(
             model_key=self.key,

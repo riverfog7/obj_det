@@ -68,6 +68,7 @@ class TuningRunner:
                 if logger:
                     logger.start_run(run_name, run_payload)
                     logger.start_trial(trial.number, hparams)
+                    logger.log_metrics({"run/started": 1}, step=0)
                 artifact = adapter.train(
                     train_ds,
                     val_ds,

@@ -5,7 +5,13 @@ import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from obj_det.models.logging import CompositeLogger, LocalJsonLogger, flatten_eval_result, flatten_scalar_mapping
+from obj_det.models.logging import (
+    CompositeLogger,
+    LocalJsonLogger,
+    flatten_eval_result,
+    flatten_prefixed_scalar_mapping,
+    flatten_scalar_mapping,
+)
 from obj_det.models.logging.base import BaseExperimentLogger
 from obj_det.models.schemas.result import EvalResult
 
@@ -57,6 +63,17 @@ class LoggingTest(unittest.TestCase):
 
         self.assertEqual(step, 2)
         self.assertEqual(metrics, {"train/loss": 1.5, "train/ok": True})
+
+    def test_flatten_prefixed_scalar_mapping_does_not_duplicate_prefix(self):
+        metrics, step = flatten_prefixed_scalar_mapping(
+            "train",
+            {"epoch": 3, "train/box_loss": "1.5", "lr/pg0": 0.01, "name": "x"},
+        )
+
+        self.assertEqual(step, 3)
+        self.assertEqual(metrics["train/box_loss"], 1.5)
+        self.assertEqual(metrics["train/lr/pg0"], 0.01)
+        self.assertNotIn("train/train_box_loss", metrics)
 
     def test_local_json_logger_writes_events(self):
         with TemporaryDirectory() as tmp:
