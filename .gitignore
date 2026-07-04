@@ -15,3 +15,6 @@ datasets/
 !configs/datasets/
 .cache/
 cache/
+
+*.pt
+*.safetensors
