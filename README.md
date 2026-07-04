@@ -269,7 +269,7 @@ print(result.primary_metric, result.primary_metric_value)
 
 Current backend status:
 
-- `torchvision`: Faster R-CNN adapter with train/predict/evaluate support.
+- `torchvision`: Faster R-CNN adapter trained through Hugging Face `Trainer`; no custom PyTorch loop.
 - `hf_trainer`: Transformers `Trainer` adapter with COCO-style image-processor targets and canonical predictions.
 - `ultralytics`: HF-backed Ultralytics `DetectionTrainer` adapter; no YOLO folder export is used.
 

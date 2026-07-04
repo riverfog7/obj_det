@@ -1,17 +1,18 @@
 from __future__ import annotations
 
 import unittest
+from pathlib import Path
 
 from datasets import Dataset
 
-from obj_det.models.adapters.torchvision import TorchvisionDetectionAdapter
+from obj_det.models.adapters.torchvision import _TorchvisionTrainerDataset, _torchvision_collate
 from obj_det.models.data.loader import dataloader_kwargs
 from obj_det.models.data.hf_targets import sample_to_coco_annotation
 from obj_det.models.data.row_parser import HFDetectionRowParser
 from obj_det.models.data.sample_source import DetectionSampleSource
 from obj_det.models.data.transforms import DetectionTransform
 from obj_det.models.data.ultralytics_dataset import HFUltralyticsDetectionDataset, ultralytics_detection_collate
-from obj_det.models.schemas import EvalStrategyConfig, ModelConfig, TrainConfig, TransformConfig, DataLoaderConfig
+from obj_det.models.schemas import DataLoaderConfig, TransformConfig
 
 from .helpers import row
 
@@ -60,24 +61,25 @@ class BackendDataTest(unittest.TestCase):
             {"num_workers": 2, "pin_memory": True, "persistent_workers": True, "prefetch_factor": 2},
         )
 
-    def test_torchvision_rejects_enabled_train_eval_strategy(self):
-        adapter = TorchvisionDetectionAdapter(
-            ModelConfig(
-                key="tv",
-                backend="torchvision",
-                model_name_or_path="fasterrcnn_resnet50_fpn",
-            )
-        )
-        cfg = TrainConfig(
-            run_key="r",
-            classes=["car"],
-            output_dir="/tmp/r",
-            transform=TransformConfig(image_size=32),
-            eval_strategy=EvalStrategyConfig(enabled=True),
-        )
+    def test_torchvision_dataset_and_collate_are_trainer_inputs(self):
+        ds = Dataset.from_list([row(), row(image_id="img2")])
+        parser = HFDetectionRowParser(["car"], "meta")
+        source = DetectionSampleSource(ds, parser)
+        transform = DetectionTransform(TransformConfig(image_size=64))
+        dataset = _TorchvisionTrainerDataset(source, transform)
+        item = dataset[0]
+        batch = _torchvision_collate([dataset[0], dataset[1]])
 
-        with self.assertRaises(NotImplementedError):
-            adapter.train(Dataset.from_list([row()]), Dataset.from_list([row()]), cfg)
+        self.assertEqual(tuple(item["image"].shape), (3, 64, 64))
+        self.assertEqual(tuple(item["target"]["boxes"].shape), (1, 4))
+        self.assertEqual(len(batch["images"]), 2)
+        self.assertEqual(len(batch["targets"]), 2)
+
+    def test_torchvision_adapter_has_no_custom_training_loop(self):
+        source = Path("src/obj_det/models/adapters/torchvision.py").read_text()
+
+        self.assertNotIn("loss.backward", source)
+        self.assertNotIn("optimizer.step", source)
 
 
 if __name__ == "__main__":

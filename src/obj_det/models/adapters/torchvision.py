@@ -1,18 +1,16 @@
 from __future__ import annotations
 
-import math
-from pathlib import Path
 from typing import Iterator
 
 import torch
 from datasets import Dataset
-from torch.utils.data import DataLoader
 from torchvision.models.detection import FasterRCNN_ResNet50_FPN_Weights, fasterrcnn_resnet50_fpn
 from torchvision.models.detection.faster_rcnn import FastRCNNPredictor
+from transformers import Trainer
 
 from obj_det.datasets.models import BBox
 from obj_det.models.adapters.base import BaseModelAdapter
-from obj_det.models.data.loader import dataloader_kwargs, seed_worker_transform
+from obj_det.models.data.loader import seed_worker_transform
 from obj_det.models.data.row_parser import HFDetectionRowParser
 from obj_det.models.data.sample import DetectionSample
 from obj_det.models.data.sample_source import DetectionSampleSource
@@ -25,58 +23,42 @@ from obj_det.models.utils.repro import set_seed
 
 class TorchvisionDetectionAdapter(BaseModelAdapter):
     def train(self, train_ds: Dataset, val_ds: Dataset, train_cfg: TrainConfig) -> ModelArtifact:
-        if train_cfg.eval_strategy.enabled:
-            raise NotImplementedError("TorchVision train-time eval_strategy is not implemented yet")
-
         set_seed(train_cfg.seed)
-        device = self._device(train_cfg.backend_params)
         train_cfg.output_dir.mkdir(parents=True, exist_ok=True)
 
-        model = self._build_model(num_classes=len(train_cfg.classes) + 1).to(device)
+        model = self._build_model(num_classes=len(train_cfg.classes) + 1)
         parser = HFDetectionRowParser(classes=train_cfg.classes, label_mode=train_cfg.label_mode)
         transform = build_detection_transform(train_cfg.transform, seed=train_cfg.seed)
         train_source = DetectionSampleSource(train_ds, parser, predecode_images=train_cfg.loader.predecode_images)
-        loader = DataLoader(
-            _TorchvisionDataset(train_source, transform),
-            batch_size=train_cfg.batch_size,
-            shuffle=True,
-            collate_fn=_collate,
-            **dataloader_kwargs(train_cfg.loader),
+        val_source = DetectionSampleSource(val_ds, parser, predecode_images=train_cfg.loader.predecode_images)
+
+        trainer = _TorchvisionTrainer(
+            model=model,
+            args=self._training_args(train_cfg),
+            train_dataset=_TorchvisionTrainerDataset(train_source, transform),
+            eval_dataset=_TorchvisionTrainerDataset(val_source, transform),
+            data_collator=_torchvision_collate,
+            train_cfg=train_cfg,
         )
-
-        optimizer = self._optimizer(model, train_cfg)
-        max_epochs = train_cfg.max_epochs or 1
-        max_steps = train_cfg.max_steps or math.inf
-        step = 0
-        last_loss = None
-        model.train()
-
-        for _epoch in range(max_epochs):
-            for images, targets, _samples in loader:
-                images = [image.to(device) for image in images]
-                targets = [{k: v.to(device) for k, v in target.items()} for target in targets]
-                loss_dict = model(images, targets)
-                loss = sum(loss for loss in loss_dict.values())
-                optimizer.zero_grad(set_to_none=True)
-                loss.backward()
-                optimizer.step()
-                last_loss = float(loss.detach().cpu())
-                step += 1
-                if step >= max_steps:
-                    break
-            if step >= max_steps:
-                break
+        trainer.train()
 
         checkpoint_path = train_cfg.output_dir / "checkpoint.pt"
         torch.save(
             {
-                "model_state_dict": model.state_dict(),
+                "model_state_dict": trainer.model.state_dict(),
                 "classes": train_cfg.classes,
                 "label_mode": train_cfg.label_mode,
                 "model_name_or_path": str(self.cfg.model_name_or_path),
             },
             checkpoint_path,
         )
+
+        train_loss = None
+        if trainer.state.log_history:
+            for row in reversed(trainer.state.log_history):
+                if "train_loss" in row:
+                    train_loss = float(row["train_loss"])
+                    break
 
         return ModelArtifact(
             model_key=self.key,
@@ -86,8 +68,9 @@ class TorchvisionDetectionAdapter(BaseModelAdapter):
             label_mode=train_cfg.label_mode,
             artifact_path=train_cfg.output_dir,
             checkpoint_path=checkpoint_path,
-            best_metric_name="train_loss" if last_loss is not None else None,
-            best_metric_value=last_loss,
+            best_metric_name="train_loss" if train_loss is not None else None,
+            best_metric_value=train_loss,
+            meta={"trainer_global_step": trainer.state.global_step},
         )
 
     def predict(
@@ -168,15 +151,52 @@ class TorchvisionDetectionAdapter(BaseModelAdapter):
         model.roi_heads.box_predictor = FastRCNNPredictor(in_features, num_classes)
         return model
 
-    def _optimizer(self, model, train_cfg: TrainConfig):
-        params = [p for p in model.parameters() if p.requires_grad]
-        optimizer_name = str(train_cfg.hparams.get("optimizer", "sgd")).lower()
-        lr = float(train_cfg.hparams.get("learning_rate", train_cfg.hparams.get("lr", 0.001)))
-        weight_decay = float(train_cfg.hparams.get("weight_decay", 0.0005))
-        if optimizer_name == "adamw":
-            return torch.optim.AdamW(params, lr=lr, weight_decay=weight_decay)
-        momentum = float(train_cfg.hparams.get("momentum", 0.9))
-        return torch.optim.SGD(params, lr=lr, momentum=momentum, weight_decay=weight_decay)
+    def _training_args(self, train_cfg: TrainConfig):
+        from transformers import TrainingArguments
+
+        hparams = train_cfg.hparams
+        max_steps = train_cfg.max_steps if train_cfg.max_steps is not None else -1
+        epochs = float(train_cfg.max_epochs or 1)
+        loader = train_cfg.loader
+        loader_args = {
+            "dataloader_num_workers": loader.num_workers,
+            "dataloader_pin_memory": loader.pin_memory,
+            "dataloader_persistent_workers": bool(loader.persistent_workers) if loader.num_workers > 0 else False,
+        }
+        if loader.num_workers > 0 and loader.prefetch_factor is not None:
+            loader_args["dataloader_prefetch_factor"] = loader.prefetch_factor
+
+        return TrainingArguments(
+            output_dir=str(train_cfg.output_dir),
+            num_train_epochs=epochs,
+            max_steps=max_steps,
+            per_device_train_batch_size=train_cfg.batch_size,
+            per_device_eval_batch_size=train_cfg.batch_size,
+            gradient_accumulation_steps=1,
+            learning_rate=float(hparams.get("learning_rate", hparams.get("lr", 0.001))),
+            weight_decay=float(hparams.get("weight_decay", 0.0005)),
+            warmup_ratio=float(hparams.get("warmup_ratio", 0.0)),
+            lr_scheduler_type=hparams.get("lr_scheduler_type", "linear"),
+            max_grad_norm=float(hparams.get("max_grad_norm", 1.0)),
+            seed=train_cfg.seed,
+            fp16=bool(train_cfg.amp and torch.cuda.is_available()),
+            eval_strategy=self._eval_strategy(train_cfg),
+            save_strategy="epoch" if max_steps < 0 else "no",
+            logging_strategy="steps",
+            logging_steps=int(train_cfg.backend_params.get("logging_steps", 10)),
+            report_to=[],
+            remove_unused_columns=False,
+            load_best_model_at_end=False,
+            **loader_args,
+            **train_cfg.backend_params.get("training_args", {}),
+        )
+
+    def _eval_strategy(self, train_cfg: TrainConfig) -> str:
+        if not train_cfg.eval_strategy.enabled:
+            return "no"
+        if train_cfg.eval_strategy.every_epochs != 1:
+            raise NotImplementedError("TorchVision HF Trainer eval_strategy currently supports every_epochs=1 only")
+        return "epoch"
 
     def _device(self, params: dict) -> torch.device:
         requested = params.get("device")
@@ -185,7 +205,47 @@ class TorchvisionDetectionAdapter(BaseModelAdapter):
         return torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
-class _TorchvisionDataset(torch.utils.data.Dataset):
+class _TorchvisionTrainer(Trainer):
+    def __init__(self, *args, train_cfg: TrainConfig, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.train_cfg = train_cfg
+
+    def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
+        loss_dict = model(inputs["images"], inputs["targets"])
+        loss = sum(loss for loss in loss_dict.values())
+        return (loss, loss_dict) if return_outputs else loss
+
+    def prediction_step(self, model, inputs, prediction_loss_only, ignore_keys=None):
+        was_training = model.training
+        model.train()
+        with torch.no_grad():
+            loss_dict = model(inputs["images"], inputs["targets"])
+            loss = sum(loss for loss in loss_dict.values()).detach()
+        model.train(was_training)
+        return loss, None, None
+
+    def create_optimizer(self):
+        if self.optimizer is not None:
+            return self.optimizer
+
+        params = [p for p in self.model.parameters() if p.requires_grad]
+        hparams = self.train_cfg.hparams
+        optimizer_name = str(hparams.get("optimizer", "sgd")).lower()
+        lr = float(hparams.get("learning_rate", hparams.get("lr", 0.001)))
+        weight_decay = float(hparams.get("weight_decay", 0.0005))
+
+        if optimizer_name == "adamw":
+            self.optimizer = torch.optim.AdamW(params, lr=lr, weight_decay=weight_decay)
+        elif optimizer_name == "sgd":
+            momentum = float(hparams.get("momentum", 0.9))
+            self.optimizer = torch.optim.SGD(params, lr=lr, momentum=momentum, weight_decay=weight_decay)
+        else:
+            raise ValueError(f"Unsupported TorchVision optimizer: {optimizer_name}")
+
+        return self.optimizer
+
+
+class _TorchvisionTrainerDataset(torch.utils.data.Dataset):
     def __init__(self, source: DetectionSampleSource, transform):
         self.source = source
         self.transform = transform
@@ -196,7 +256,7 @@ class _TorchvisionDataset(torch.utils.data.Dataset):
     def __getitem__(self, idx: int):
         seed_worker_transform(self.transform)
         sample = self.transform(self.source[idx])
-        return _image_tensor(sample), _target_dict(sample), sample
+        return {"image": _image_tensor(sample), "target": _target_dict(sample)}
 
 
 def _image_tensor(sample: DetectionSample) -> torch.Tensor:
@@ -218,6 +278,8 @@ def _target_dict(sample: DetectionSample) -> dict[str, torch.Tensor]:
     }
 
 
-def _collate(batch):
-    images, targets, samples = zip(*batch)
-    return list(images), list(targets), list(samples)
+def _torchvision_collate(batch):
+    return {
+        "images": [item["image"] for item in batch],
+        "targets": [item["target"] for item in batch],
+    }
