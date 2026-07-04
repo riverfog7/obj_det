@@ -12,6 +12,7 @@ from .config import (
     TransformConfig,
 )
 from .experiment import DatasetRef, ExperimentConfig, FinalConfig
+from .logging import LoggingBackend, LoggingConfig, LocalLoggingConfig, WandbLoggingConfig, WandbMode
 from .prediction import PredictionObject, PredictionRecord
 from .result import EvalResult
 from .tuning import BestTrial, SearchSpace, TrialResult, TuningConfig, TuningResult
@@ -27,6 +28,9 @@ __all__ = [
     "ExperimentConfig",
     "FinalConfig",
     "LabelMode",
+    "LoggingBackend",
+    "LoggingConfig",
+    "LocalLoggingConfig",
     "ModelArtifact",
     "ModelConfig",
     "PredictionObject",
@@ -39,4 +43,6 @@ __all__ = [
     "TrialResult",
     "TuningConfig",
     "TuningResult",
+    "WandbLoggingConfig",
+    "WandbMode",
 ]

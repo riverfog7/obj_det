@@ -1,0 +1,87 @@
+from __future__ import annotations
+
+import json
+import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
+
+from obj_det.models.logging import CompositeLogger, LocalJsonLogger, flatten_eval_result, flatten_scalar_mapping
+from obj_det.models.logging.base import BaseExperimentLogger
+from obj_det.models.schemas.result import EvalResult
+
+
+class RecordingLogger(BaseExperimentLogger):
+    def __init__(self):
+        self.events = []
+
+    def start_run(self, name, config):
+        self.events.append(("start_run", name, config))
+
+    def finish_run(self, state="finished", error=None):
+        self.events.append(("finish_run", state, error))
+
+    def log_metrics(self, metrics, step=None):
+        self.events.append(("metrics", metrics, step))
+
+
+class LoggingTest(unittest.TestCase):
+    def test_flatten_eval_result_logs_all_scalar_groups(self):
+        result = EvalResult(
+            model_key="m",
+            dataset_key="tiny",
+            split="test",
+            primary_metric="map_50_95",
+            primary_metric_value=0.5,
+            metrics={"map_50_95": 0.5, "map_50": 0.7},
+            per_class={"big car": {"map_50": 0.8}},
+            per_condition={"low light": {"map_50": 0.6}},
+            per_domain={"road": {"map_50": 0.4}},
+            per_size={"small": {"ap": 0.3}},
+            num_images=3,
+            num_ground_truth_objects=4,
+            num_predictions=5,
+        )
+
+        metrics = flatten_eval_result(result, prefix="eval/test")
+
+        self.assertEqual(metrics["eval/test/map_50_95"], 0.5)
+        self.assertEqual(metrics["eval/test/primary/map_50_95"], 0.5)
+        self.assertEqual(metrics["eval/test/per_class/big_car/map_50"], 0.8)
+        self.assertEqual(metrics["eval/test/per_condition/low_light/map_50"], 0.6)
+        self.assertEqual(metrics["eval/test/per_domain/road/map_50"], 0.4)
+        self.assertEqual(metrics["eval/test/per_size/small/ap"], 0.3)
+        self.assertEqual(metrics["eval/test/num_images"], 3)
+
+    def test_flatten_scalar_mapping_keeps_only_scalars(self):
+        metrics, step = flatten_scalar_mapping("train", {"step": 2, "loss": "1.5", "name": "x", "ok": True})
+
+        self.assertEqual(step, 2)
+        self.assertEqual(metrics, {"train/loss": 1.5, "train/ok": True})
+
+    def test_local_json_logger_writes_events(self):
+        with TemporaryDirectory() as tmp:
+            path = Path(tmp) / "events.jsonl"
+            logger = LocalJsonLogger(path)
+            logger.start_run("run", {"a": 1})
+            logger.log_metrics({"train/loss": 1.2}, step=4)
+            rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+
+        self.assertEqual(rows[0]["event"], "start_run")
+        self.assertEqual(rows[1]["metrics"], {"train/loss": 1.2})
+        self.assertEqual(rows[1]["step"], 4)
+
+    def test_composite_forwards_events(self):
+        first = RecordingLogger()
+        second = RecordingLogger()
+        logger = CompositeLogger([first, second])
+
+        logger.start_run("r", {})
+        logger.log_metrics({"x": 1}, step=2)
+        logger.finish_run()
+
+        self.assertEqual(first.events, second.events)
+        self.assertEqual(first.events[1], ("metrics", {"x": 1}, 2))
+
+
+if __name__ == "__main__":
+    unittest.main()

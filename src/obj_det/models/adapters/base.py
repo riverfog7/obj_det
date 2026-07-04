@@ -9,6 +9,7 @@ from obj_det.models.schemas.artifact import ModelArtifact
 from obj_det.models.schemas.config import EvalConfig, ModelConfig, PredictConfig, TrainConfig
 from obj_det.models.schemas.prediction import PredictionRecord
 from obj_det.models.schemas.result import EvalResult
+from obj_det.models.logging.base import BaseExperimentLogger
 
 
 class BaseModelAdapter(ABC):
@@ -20,7 +21,15 @@ class BaseModelAdapter(ABC):
         self.backend = cfg.backend
 
     @abstractmethod
-    def train(self, train_ds: Dataset, val_ds: Dataset, train_cfg: TrainConfig) -> ModelArtifact:
+    def train(
+        self,
+        train_ds: Dataset,
+        val_ds: Dataset,
+        train_cfg: TrainConfig,
+        *,
+        logger: BaseExperimentLogger | None = None,
+        log_prefix: str = "train",
+    ) -> ModelArtifact:
         raise NotImplementedError
 
     @abstractmethod
@@ -32,7 +41,15 @@ class BaseModelAdapter(ABC):
     ) -> Iterator[PredictionRecord]:
         raise NotImplementedError
 
-    def evaluate(self, ds: Dataset, artifact: ModelArtifact, eval_cfg: EvalConfig) -> EvalResult:
+    def evaluate(
+        self,
+        ds: Dataset,
+        artifact: ModelArtifact,
+        eval_cfg: EvalConfig,
+        *,
+        logger: BaseExperimentLogger | None = None,
+        log_prefix: str | None = None,
+    ) -> EvalResult:
         from obj_det.models.evaluation.evaluator import DetectionEvaluator
 
         predict_cfg = PredictConfig(
@@ -46,4 +63,7 @@ class BaseModelAdapter(ABC):
         )
         predictions = list(self.predict(ds, artifact, predict_cfg))
         evaluator = DetectionEvaluator()
-        return evaluator.evaluate(ds, predictions, eval_cfg, model_key=self.key)
+        result = evaluator.evaluate(ds, predictions, eval_cfg, model_key=self.key)
+        if logger is not None:
+            logger.log_eval_result(result, prefix=log_prefix)
+        return result

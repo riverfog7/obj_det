@@ -26,8 +26,10 @@ class DummyAdapter(BaseModelAdapter):
         self.trained = []
         self.evaluated = []
 
-    def train(self, train_ds, val_ds, train_cfg):
+    def train(self, train_ds, val_ds, train_cfg, *, logger=None, log_prefix="train"):
         self.trained.append((train_cfg.seed, dict(train_cfg.hparams), train_cfg.output_dir))
+        if logger is not None:
+            logger.log_metrics({f"{log_prefix}/dummy_loss": 1.0})
         if train_cfg.hparams.get("fail"):
             raise RuntimeError("planned failure")
         return ModelArtifact(
@@ -39,15 +41,18 @@ class DummyAdapter(BaseModelAdapter):
             artifact_path=train_cfg.output_dir,
         )
 
-    def evaluate(self, ds, artifact, eval_cfg):
+    def evaluate(self, ds, artifact, eval_cfg, *, logger=None, log_prefix=None):
         self.evaluated.append(ds)
         value = float(self.trained[-1][1].get("score", 0.0))
-        return EvalResult(
+        result = EvalResult(
             model_key=self.key,
             primary_metric="map_50_95",
             primary_metric_value=value,
             metrics={"map_50_95": value},
         )
+        if logger is not None:
+            logger.log_eval_result(result, prefix=log_prefix)
+        return result
 
     def predict(self, ds, artifact, predict_cfg: PredictConfig):
         return iter([
@@ -133,6 +138,32 @@ class FakeOptuna(types.ModuleType):
         return self.study
 
 
+class RecordingLogger:
+    def __init__(self):
+        self.events = []
+
+    def start_run(self, name, config):
+        self.events.append(("start_run", name, config))
+
+    def finish_run(self, state="finished", error=None):
+        self.events.append(("finish_run", state, error))
+
+    def start_trial(self, trial_number, hparams):
+        self.events.append(("start_trial", trial_number, hparams))
+
+    def finish_trial(self, state, error=None):
+        self.events.append(("finish_trial", state, error))
+
+    def log_metrics(self, metrics, step=None):
+        self.events.append(("metrics", metrics, step))
+
+    def log_eval_result(self, result, step=None, prefix=None):
+        self.events.append(("eval_result", prefix, result.primary_metric_value))
+
+    def log_artifact(self, path, name=None):
+        self.events.append(("artifact", name, path))
+
+
 class TuningTest(unittest.TestCase):
     def setUp(self):
         self.old_optuna = sys.modules.get("optuna")
@@ -171,6 +202,33 @@ class TuningTest(unittest.TestCase):
         self.assertIsNotNone(result.best_trial)
         self.assertEqual(result.best_trial.trial_number, 1)
         self.assertEqual(result.best_trial.metric_value, 0.3)
+
+    def test_hpo_logs_trial_train_eval_and_objective(self):
+        sys.modules["optuna"] = FakeOptuna([
+            {"score": 0.3, "fail": False},
+        ])
+        ds = Dataset.from_list([row()])
+        adapter = DummyAdapter()
+        logger = RecordingLogger()
+        with TemporaryDirectory() as tmp:
+            transform = TransformConfig(image_size=32)
+            TuningRunner(logger=logger).optimize(
+                adapter=adapter,
+                train_ds=ds,
+                val_ds=ds,
+                base_train_cfg=TrainConfig(run_key="r", classes=["car"], output_dir=Path(tmp) / "base", transform=transform),
+                eval_cfg=EvalConfig(classes=["car"], transform=transform),
+                search_space=SearchSpace(params={
+                    "score": {"type": "float", "low": 0.0, "high": 1.0},
+                    "fail": {"type": "categorical", "choices": [True, False]},
+                }),
+                tuning_cfg=TuningConfig(study_name="s", n_trials=1, output_dir=Path(tmp)),
+            )
+
+        metric_events = [event for event in logger.events if event[0] == "metrics"]
+        self.assertTrue(any("hpo/trial_0000/train/dummy_loss" in event[1] for event in metric_events))
+        self.assertTrue(any("hpo/trial_0000/objective/map_50_95" in event[1] for event in metric_events))
+        self.assertTrue(any(event[:2] == ("eval_result", "hpo/trial_0000/eval") for event in logger.events))
 
     def test_final_seeds_runs_all_seeds_without_picking_best(self):
         ds = Dataset.from_list([row()])

@@ -54,7 +54,11 @@ tuning:
   n_trials: 10
   objective_metric: map_50_95
   output_dir: runs/hpo/yolo11n_hazydet_controlled
-  log_to_wandb: true
+
+logging:
+  backends: [local, wandb]
+  wandb:
+    project: yolo11n_hazydet_controlled
 
 search_space_file: ../search_spaces/yolo_controlled.yaml
 

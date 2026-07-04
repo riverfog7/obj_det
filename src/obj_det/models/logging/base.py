@@ -19,11 +19,13 @@ class BaseExperimentLogger(ABC):
     def finish_trial(self, state: str, error: str | None = None) -> None:
         pass
 
-    def log_metrics(self, metrics: dict[str, float], step: int | None = None) -> None:
+    def log_metrics(self, metrics: dict[str, Any], step: int | None = None) -> None:
         pass
 
-    def log_eval_result(self, result: EvalResult, step: int | None = None) -> None:
-        self.log_metrics(result.metrics, step=step)
+    def log_eval_result(self, result: EvalResult, step: int | None = None, prefix: str | None = None) -> None:
+        from obj_det.models.logging.metrics import flatten_eval_result
+
+        self.log_metrics(flatten_eval_result(result, prefix=prefix), step=step)
 
     def log_artifact(self, path, name: str | None = None) -> None:
         pass

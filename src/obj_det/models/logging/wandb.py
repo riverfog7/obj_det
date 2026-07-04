@@ -5,12 +5,27 @@ from typing import Any
 from obj_det.models.schemas.result import EvalResult
 
 from .base import BaseExperimentLogger
+from .metrics import flatten_eval_result, scalar_or_none
 
 
 class WandbLogger(BaseExperimentLogger):
-    def __init__(self, *, project: str, entity: str | None = None, **init_kwargs: Any):
+    def __init__(
+        self,
+        *,
+        project: str,
+        entity: str | None = None,
+        group: str | None = None,
+        name: str | None = None,
+        mode: str = "online",
+        tags: list[str] | None = None,
+        **init_kwargs: Any,
+    ):
         self.project = project
         self.entity = entity
+        self.group = group
+        self.name = name
+        self.mode = mode
+        self.tags = tags or []
         self.init_kwargs = init_kwargs
         self.run = None
 
@@ -26,7 +41,10 @@ class WandbLogger(BaseExperimentLogger):
         self.run = wandb.init(
             project=self.project,
             entity=self.entity,
-            name=name,
+            group=self.group,
+            name=self.name or name,
+            mode=self.mode,
+            tags=self.tags,
             config=config,
             **self.init_kwargs,
         )
@@ -39,7 +57,12 @@ class WandbLogger(BaseExperimentLogger):
             self.run = None
 
     def start_trial(self, trial_number: int, hparams: dict[str, Any]) -> None:
-        self.log_metrics({f"trial/{k}": v for k, v in hparams.items() if isinstance(v, (int, float, bool))})
+        self.log_metrics({"trial/number": trial_number})
+        if self.run is not None:
+            self.run.config.update(
+                {f"trial_{trial_number:04d}/{key}": value for key, value in hparams.items()},
+                allow_val_change=True,
+            )
 
     def finish_trial(self, state: str, error: str | None = None) -> None:
         data: dict[str, Any] = {"trial/state": state}
@@ -47,14 +70,18 @@ class WandbLogger(BaseExperimentLogger):
             data["trial/error"] = error
         self._wandb().log(data)
 
-    def log_metrics(self, metrics: dict[str, float], step: int | None = None) -> None:
-        self._wandb().log(metrics, step=step)
+    def log_metrics(self, metrics: dict[str, Any], step: int | None = None) -> None:
+        scalars = {}
+        for key, value in metrics.items():
+            scalar = scalar_or_none(value)
+            if scalar is not None:
+                scalars[key] = scalar
+        if scalars:
+            self._wandb().log(scalars, step=step)
 
-    def log_eval_result(self, result: EvalResult, step: int | None = None) -> None:
-        self.log_metrics(result.metrics, step=step)
+    def log_eval_result(self, result: EvalResult, step: int | None = None, prefix: str | None = None) -> None:
+        self.log_metrics(flatten_eval_result(result, prefix=prefix), step=step)
 
     def log_artifact(self, path, name: str | None = None) -> None:
-        wandb = self._wandb()
-        artifact = wandb.Artifact(name=name or "artifact", type="model")
-        artifact.add_file(str(path))
-        wandb.log_artifact(artifact)
+        if self.run is not None:
+            self.run.summary[f"artifact/{name or 'path'}"] = str(path)

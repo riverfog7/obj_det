@@ -23,7 +23,6 @@ class TuningConfig(ModelSchema):
     objective_metric: str = "map_50_95"
     storage: str | None = None
     output_dir: Path
-    log_to_wandb: bool = False
     meta: dict[str, Any] = Field(default_factory=dict)
 
 

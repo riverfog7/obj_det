@@ -16,9 +16,9 @@ from obj_det.models.experiment import (
     save_model_artifact,
     save_tuning_result,
 )
+from obj_det.models.logging.factory import logger_from_config
 from obj_det.models.schemas.artifact import ModelArtifact
 from obj_det.models.schemas.experiment import ExperimentConfig
-from obj_det.models.logging.wandb import WandbLogger
 from obj_det.models.tuning.final import FinalSeedRun, run_final_seeds
 from obj_det.models.tuning.runner import TuningRunner
 
@@ -36,13 +36,33 @@ def train(
     exp = load_experiment_config(config)
     dataset = load_from_disk(exp.dataset.path)
     adapter = _adapter(exp)
+    logger = _logger(exp, default_log_path=exp.train.output_dir / "logs/events.jsonl", run_name=exp.train.run_key)
 
-    artifact = adapter.train(
-        train_ds=_split(dataset, exp.dataset.train_split),
-        val_ds=_split(dataset, exp.dataset.val_split),
-        train_cfg=exp.train,
-    )
-    path = save_model_artifact(artifact, exp.train.output_dir / "artifact.json")
+    state = "finished"
+    error = None
+    try:
+        if logger:
+            logger.start_run(exp.train.run_key, _run_config(exp))
+        artifact = adapter.train(
+            train_ds=_split(dataset, exp.dataset.train_split),
+            val_ds=_split(dataset, exp.dataset.val_split),
+            train_cfg=exp.train,
+            logger=logger,
+            log_prefix="train",
+        )
+        path = save_model_artifact(artifact, exp.train.output_dir / "artifact.json")
+        if logger:
+            logger.log_artifact(path, name="artifact_metadata")
+            if artifact.checkpoint_path is not None:
+                logger.log_artifact(artifact.checkpoint_path, name="checkpoint")
+    except Exception as exc:
+        state = "failed"
+        error = repr(exc)
+        raise
+    finally:
+        if logger:
+            logger.finish_run(state=state, error=error)
+
     typer.echo(f"Saved artifact metadata to {path}")
 
 
@@ -70,9 +90,32 @@ def evaluate(
     dataset = load_from_disk(exp.dataset.path)
     adapter = _adapter(exp)
 
-    result = adapter.evaluate(_split(dataset, split), artifact_obj, exp.eval)
     out_path = out or _artifact_dir(artifact_obj, artifact) / f"eval_{split}.json"
-    save_eval_result(result, out_path)
+    logger = _logger(exp, default_log_path=out_path.parent / "logs/events.jsonl", run_name=f"{artifact_obj.run_key}_eval_{split}")
+
+    state = "finished"
+    error = None
+    try:
+        if logger:
+            logger.start_run(f"{artifact_obj.run_key}_eval_{split}", _run_config(exp))
+        result = adapter.evaluate(
+            _split(dataset, split),
+            artifact_obj,
+            exp.eval,
+            logger=logger,
+            log_prefix=f"eval/{split}",
+        )
+        save_eval_result(result, out_path)
+        if logger:
+            logger.log_artifact(out_path, name=f"eval_{split}")
+    except Exception as exc:
+        state = "failed"
+        error = repr(exc)
+        raise
+    finally:
+        if logger:
+            logger.finish_run(state=state, error=error)
+
     typer.echo(f"Saved eval result to {out_path}")
 
 
@@ -92,7 +135,8 @@ def optimize(
     dataset = load_from_disk(exp.dataset.path)
     adapter = _adapter(exp)
 
-    result = TuningRunner(logger=_tuning_logger(exp)).optimize(
+    logger = _logger(exp, default_log_path=exp.tuning.output_dir / "logs/events.jsonl", run_name=exp.tuning.study_name)
+    result = TuningRunner(logger=logger).optimize(
         adapter=adapter,
         train_ds=_split(dataset, exp.dataset.train_split),
         val_ds=_split(dataset, exp.dataset.val_split),
@@ -100,6 +144,7 @@ def optimize(
         eval_cfg=exp.eval,
         search_space=exp.search_space,
         tuning_cfg=exp.tuning,
+        run_config=_run_config(exp),
     )
     result_path = save_tuning_result(result, exp.tuning.output_dir / "tuning_result.json")
     typer.echo(f"Saved tuning result to {result_path}")
@@ -132,20 +177,38 @@ def final_(
     adapter = _adapter(exp)
 
     output_dir = exp.final.output_dir or exp.train.output_dir / "final"
-    runs = run_final_seeds(
-        adapter=adapter,
-        train_ds=_split(dataset, exp.dataset.train_split),
-        val_ds=_split(dataset, exp.dataset.val_split),
-        test_ds=_split(dataset, exp.dataset.test_split),
-        base_train_cfg=exp.train,
-        eval_cfg=exp.eval,
-        hparams=best.hparams,
-        seeds=exp.final.seeds,
-        output_dir=output_dir,
-        evaluate_val=exp.final.evaluate_val,
-    )
     out_path = out or output_dir / "final_results.json"
-    _write_final_results(runs, out_path)
+    logger = _logger(exp, default_log_path=output_dir / "logs/events.jsonl", run_name=f"{exp.train.run_key}_final")
+
+    state = "finished"
+    error = None
+    try:
+        if logger:
+            logger.start_run(f"{exp.train.run_key}_final", _run_config(exp))
+        runs = run_final_seeds(
+            adapter=adapter,
+            train_ds=_split(dataset, exp.dataset.train_split),
+            val_ds=_split(dataset, exp.dataset.val_split),
+            test_ds=_split(dataset, exp.dataset.test_split),
+            base_train_cfg=exp.train,
+            eval_cfg=exp.eval,
+            hparams=best.hparams,
+            seeds=exp.final.seeds,
+            output_dir=output_dir,
+            evaluate_val=exp.final.evaluate_val,
+            logger=logger,
+        )
+        _write_final_results(runs, out_path)
+        if logger:
+            logger.log_artifact(out_path, name="final_results")
+    except Exception as exc:
+        state = "failed"
+        error = repr(exc)
+        raise
+    finally:
+        if logger:
+            logger.finish_run(state=state, error=error)
+
     typer.echo(f"Saved final results to {out_path}")
 
 
@@ -161,10 +224,12 @@ def _adapter(exp: ExperimentConfig):
     return model_adapter_from_config(_model(exp))
 
 
-def _tuning_logger(exp: ExperimentConfig):
-    if exp.tuning is None or not exp.tuning.log_to_wandb:
-        return None
-    return WandbLogger(project=exp.tuning.study_name)
+def _logger(exp: ExperimentConfig, *, default_log_path: Path, run_name: str):
+    return logger_from_config(exp.logging, default_log_path=default_log_path, run_name=run_name)
+
+
+def _run_config(exp: ExperimentConfig) -> dict:
+    return exp.model_dump(mode="json")
 
 
 def _split(dataset, split: str):

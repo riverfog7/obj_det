@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import csv
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Iterator
@@ -14,6 +15,8 @@ from obj_det.models.data.row_parser import HFDetectionRowParser
 from obj_det.models.data.sample_source import DetectionSampleSource
 from obj_det.models.data.ultralytics_dataset import HFUltralyticsDetectionDataset, ultralytics_detection_collate
 from obj_det.models.data.transforms import bbox_to_original, build_detection_transform
+from obj_det.models.logging.base import BaseExperimentLogger
+from obj_det.models.logging.metrics import flatten_scalar_mapping
 from obj_det.models.schemas.artifact import ModelArtifact
 from obj_det.models.schemas.config import PredictConfig, TrainConfig
 from obj_det.models.schemas.prediction import PredictionObject, PredictionRecord
@@ -44,7 +47,15 @@ _CONTROLLED_AUG_OFF = {
 class UltralyticsDetectionAdapter(BaseModelAdapter):
     """Ultralytics backend using HF-backed dataloaders, not YOLO folders."""
 
-    def train(self, train_ds: Dataset, val_ds: Dataset, train_cfg: TrainConfig) -> ModelArtifact:
+    def train(
+        self,
+        train_ds: Dataset,
+        val_ds: Dataset,
+        train_cfg: TrainConfig,
+        *,
+        logger: BaseExperimentLogger | None = None,
+        log_prefix: str = "train",
+    ) -> ModelArtifact:
         try:
             from ultralytics.models.yolo.detect import DetectionTrainer
         except ImportError as exc:
@@ -72,6 +83,8 @@ class UltralyticsDetectionAdapter(BaseModelAdapter):
             max_steps=train_cfg.max_steps,
         )
         trainer.train()
+        if logger is not None:
+            self._log_results_csv(Path(trainer.save_dir) / "results.csv", logger, log_prefix)
 
         checkpoint_path = trainer.best if trainer.best.exists() else trainer.last
         return ModelArtifact(
@@ -183,6 +196,16 @@ class UltralyticsDetectionAdapter(BaseModelAdapter):
             overrides.update(_CONTROLLED_AUG_OFF)
         overrides.update(train_cfg.backend_params.get("overrides", {}))
         return overrides
+
+    def _log_results_csv(self, path: Path, logger: BaseExperimentLogger, log_prefix: str) -> None:
+        if not path.exists():
+            return
+        with path.open("r", encoding="utf-8", newline="") as f:
+            reader = csv.DictReader(f)
+            for idx, row in enumerate(reader):
+                cleaned = {key.strip(): value for key, value in row.items() if key is not None}
+                metrics, step = flatten_scalar_mapping(log_prefix, cleaned)
+                logger.log_metrics(metrics, step=step if step is not None else idx)
 
     def _trainer_class(self, detection_trainer_cls):
         class HFBackedDetectionTrainer(detection_trainer_cls):

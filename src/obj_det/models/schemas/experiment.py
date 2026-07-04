@@ -7,6 +7,7 @@ from pydantic import Field, field_validator, model_validator
 
 from .base import ModelSchema
 from .config import EvalConfig, ModelConfig, PredictConfig, TrainConfig, TransformConfig, validate_class_list
+from .logging import LoggingConfig
 from .tuning import SearchSpace, TuningConfig
 
 
@@ -49,6 +50,7 @@ class ExperimentConfig(ModelSchema):
     search_space: SearchSpace | None = None
     search_space_file: Path | None = None
 
+    logging: LoggingConfig = Field(default_factory=LoggingConfig)
     final: FinalConfig = Field(default_factory=FinalConfig)
 
     @model_validator(mode="before")

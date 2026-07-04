@@ -7,6 +7,7 @@ from typing import Any
 from obj_det.models.schemas.result import EvalResult
 
 from .base import BaseExperimentLogger
+from .metrics import flatten_eval_result
 
 
 class LocalJsonLogger(BaseExperimentLogger):
@@ -26,11 +27,17 @@ class LocalJsonLogger(BaseExperimentLogger):
     def finish_trial(self, state: str, error: str | None = None) -> None:
         self._write({"event": "finish_trial", "state": state, "error": error})
 
-    def log_metrics(self, metrics: dict[str, float], step: int | None = None) -> None:
+    def log_metrics(self, metrics: dict[str, Any], step: int | None = None) -> None:
         self._write({"event": "metrics", "step": step, "metrics": metrics})
 
-    def log_eval_result(self, result: EvalResult, step: int | None = None) -> None:
-        self._write({"event": "eval_result", "step": step, "result": result.model_dump(mode="json")})
+    def log_eval_result(self, result: EvalResult, step: int | None = None, prefix: str | None = None) -> None:
+        self._write({
+            "event": "eval_result",
+            "step": step,
+            "prefix": prefix,
+            "metrics": flatten_eval_result(result, prefix=prefix),
+            "result": result.model_dump(mode="json"),
+        })
 
     def log_artifact(self, path, name: str | None = None) -> None:
         self._write({"event": "artifact", "path": str(path), "name": name})

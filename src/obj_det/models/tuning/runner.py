@@ -23,6 +23,7 @@ class TuningRunner:
         eval_cfg: EvalConfig,
         search_space: SearchSpace,
         tuning_cfg: TuningConfig,
+        run_config: dict[str, Any] | None = None,
     ) -> TuningResult:
         try:
             import optuna
@@ -43,7 +44,7 @@ class TuningRunner:
         trial_results: list[TrialResult] = []
 
         if self.logger:
-            self.logger.start_run(tuning_cfg.study_name, tuning_cfg.model_dump(mode="json"))
+            self.logger.start_run(tuning_cfg.study_name, run_config or tuning_cfg.model_dump(mode="json"))
 
         def objective(trial) -> float:
             hparams = self._sample_hparams(trial, search_space)
@@ -56,12 +57,29 @@ class TuningRunner:
                 deep=True,
             )
             try:
+                trial_prefix = f"hpo/trial_{trial.number:04d}"
                 if self.logger:
                     self.logger.start_trial(trial.number, hparams)
-                artifact = adapter.train(train_ds, val_ds, train_cfg)
-                result = adapter.evaluate(val_ds, artifact, eval_cfg)
+                artifact = adapter.train(
+                    train_ds,
+                    val_ds,
+                    train_cfg,
+                    logger=self.logger,
+                    log_prefix=f"{trial_prefix}/train",
+                )
+                if self.logger and artifact.checkpoint_path is not None:
+                    self.logger.log_artifact(artifact.checkpoint_path, name=f"trial_{trial.number:04d}_checkpoint")
+                result = adapter.evaluate(
+                    val_ds,
+                    artifact,
+                    eval_cfg,
+                    logger=self.logger,
+                    log_prefix=f"{trial_prefix}/eval",
+                )
                 metric_value = result.metrics.get(tuning_cfg.objective_metric, result.primary_metric_value)
                 trial.report(metric_value, step=0)
+                if self.logger:
+                    self.logger.log_metrics({f"{trial_prefix}/objective/{tuning_cfg.objective_metric}": metric_value})
                 trial_results.append(
                     TrialResult(
                         trial_number=trial.number,
@@ -73,7 +91,6 @@ class TuningRunner:
                     )
                 )
                 if self.logger:
-                    self.logger.log_eval_result(result)
                     self.logger.finish_trial("complete")
                 return metric_value
             except Exception as exc:

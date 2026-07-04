@@ -198,7 +198,7 @@ class ExperimentConfigTest(unittest.TestCase):
                     }
                 )
 
-    def test_tuning_log_to_wandb_loads(self):
+    def test_top_level_logging_config_loads(self):
         cfg = ExperimentConfig.model_validate(
             {
                 "dataset": {"path": "datasets/tiny"},
@@ -214,12 +214,22 @@ class ExperimentConfigTest(unittest.TestCase):
                 "tuning": {
                     "study_name": "s",
                     "output_dir": "runs/hpo",
-                    "log_to_wandb": True,
+                },
+                "logging": {
+                    "backends": ["local", "wandb"],
+                    "wandb": {
+                        "project": "obj-det-tests",
+                        "mode": "offline",
+                        "tags": ["unit"],
+                    },
                 },
             }
         )
 
-        self.assertTrue(cfg.tuning.log_to_wandb)
+        self.assertEqual(cfg.logging.backends, ["local", "wandb"])
+        self.assertEqual(cfg.logging.wandb.project, "obj-det-tests")
+        self.assertEqual(cfg.logging.wandb.mode, "offline")
+        self.assertEqual(cfg.logging.wandb.tags, ["unit"])
 
     def test_rejects_duplicate_model_transform_or_search_space_source(self):
         base = {

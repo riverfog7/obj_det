@@ -307,3 +307,23 @@ configs/experiments/
 
 Training configs can set `train.loader.num_workers` for parallel loading and
 `train.loader.predecode_images: true` to decode the HF image bytes into RAM before training.
+
+Model runs support scalar-only logging for all CLI flows:
+
+```yaml
+logging:
+  backends: [local, wandb]  # allowed: none, local, wandb
+  local:
+    path: null             # default: <run-output>/logs/events.jsonl
+  wandb:
+    project: obj-det
+    entity: null
+    group: null
+    name: null
+    mode: online           # online, offline, disabled
+    tags: []
+```
+
+Logged values include backend train scalars, HPO trial metrics, final-seed metrics,
+and evaluator metrics including per-class, per-condition, per-domain, and per-size
+results. Images, prediction previews, tables, and plots are not logged.

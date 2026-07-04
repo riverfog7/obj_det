@@ -15,6 +15,8 @@ from obj_det.models.data.row_parser import HFDetectionRowParser
 from obj_det.models.data.sample import DetectionSample
 from obj_det.models.data.sample_source import DetectionSampleSource
 from obj_det.models.data.transforms import bbox_to_original, build_detection_transform
+from obj_det.models.logging.base import BaseExperimentLogger
+from obj_det.models.logging.metrics import flatten_scalar_mapping
 from obj_det.models.schemas.artifact import ModelArtifact
 from obj_det.models.schemas.config import PredictConfig, TrainConfig
 from obj_det.models.schemas.prediction import PredictionObject, PredictionRecord
@@ -22,7 +24,15 @@ from obj_det.models.utils.repro import set_seed
 
 
 class TorchvisionDetectionAdapter(BaseModelAdapter):
-    def train(self, train_ds: Dataset, val_ds: Dataset, train_cfg: TrainConfig) -> ModelArtifact:
+    def train(
+        self,
+        train_ds: Dataset,
+        val_ds: Dataset,
+        train_cfg: TrainConfig,
+        *,
+        logger: BaseExperimentLogger | None = None,
+        log_prefix: str = "train",
+    ) -> ModelArtifact:
         set_seed(train_cfg.seed)
         train_cfg.output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -59,6 +69,10 @@ class TorchvisionDetectionAdapter(BaseModelAdapter):
                 if "train_loss" in row:
                     train_loss = float(row["train_loss"])
                     break
+            if logger is not None:
+                for row in trainer.state.log_history:
+                    metrics, step = flatten_scalar_mapping(log_prefix, row)
+                    logger.log_metrics(metrics, step=step)
 
         return ModelArtifact(
             model_key=self.key,
