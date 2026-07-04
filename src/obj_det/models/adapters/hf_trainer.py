@@ -12,6 +12,7 @@ from obj_det.models.adapters.base import BaseModelAdapter
 from obj_det.models.data.hf_dataset import HFTrainerDetectionDataset
 from obj_det.models.data.hf_targets import hf_detection_collate
 from obj_det.models.data.row_parser import HFDetectionRowParser
+from obj_det.models.data.sample_source import DetectionSampleSource
 from obj_det.models.data.transforms import bbox_to_original, build_detection_transform
 from obj_det.models.schemas.artifact import ModelArtifact
 from obj_det.models.schemas.config import PredictConfig, TrainConfig
@@ -48,8 +49,10 @@ class HFTrainerDetectionAdapter(BaseModelAdapter):
         parser = HFDetectionRowParser(classes=train_cfg.classes, label_mode=train_cfg.label_mode)
         transform = build_detection_transform(train_cfg.transform, seed=train_cfg.seed)
         processor_kwargs = train_cfg.backend_params.get("processor_kwargs", {"do_resize": False})
-        train_data = HFTrainerDetectionDataset(train_ds, parser, transform, processor, processor_kwargs)
-        val_data = HFTrainerDetectionDataset(val_ds, parser, transform, processor, processor_kwargs)
+        train_source = DetectionSampleSource(train_ds, parser, predecode_images=train_cfg.loader.predecode_images)
+        val_source = DetectionSampleSource(val_ds, parser, predecode_images=train_cfg.loader.predecode_images)
+        train_data = HFTrainerDetectionDataset(train_source, transform, processor, processor_kwargs)
+        val_data = HFTrainerDetectionDataset(val_source, transform, processor, processor_kwargs)
 
         args = self._training_args(train_cfg)
         trainer = Trainer(
@@ -115,7 +118,7 @@ class HFTrainerDetectionAdapter(BaseModelAdapter):
                 original_samples = [parser.parse(row) for row in rows[start : start + predict_cfg.batch_size]]
                 samples = [transform(sample) for sample in original_samples]
                 inputs = processor(
-                    images=[np.array(sample.image, copy=True) for sample in samples],
+                    images=[np.ascontiguousarray(sample.image) for sample in samples],
                     return_tensors="pt",
                     **processor_kwargs,
                 )
@@ -172,6 +175,14 @@ class HFTrainerDetectionAdapter(BaseModelAdapter):
         max_steps = train_cfg.max_steps if train_cfg.max_steps is not None else -1
         epochs = float(train_cfg.max_epochs or 1)
         backend_args = train_cfg.backend_params.get("training_args", {})
+        loader = train_cfg.loader
+        loader_args = {
+            "dataloader_num_workers": loader.num_workers,
+            "dataloader_pin_memory": loader.pin_memory,
+            "dataloader_persistent_workers": bool(loader.persistent_workers) if loader.num_workers > 0 else False,
+        }
+        if loader.num_workers > 0 and loader.prefetch_factor is not None:
+            loader_args["dataloader_prefetch_factor"] = loader.prefetch_factor
 
         return TrainingArguments(
             output_dir=str(train_cfg.output_dir),
@@ -194,6 +205,7 @@ class HFTrainerDetectionAdapter(BaseModelAdapter):
             report_to=[],
             remove_unused_columns=False,
             load_best_model_at_end=False,
+            **loader_args,
             **backend_args,
         )
 

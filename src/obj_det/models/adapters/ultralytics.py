@@ -9,7 +9,9 @@ from torch.utils.data import DataLoader
 
 from obj_det.datasets.models import BBox
 from obj_det.models.adapters.base import BaseModelAdapter
+from obj_det.models.data.loader import dataloader_kwargs
 from obj_det.models.data.row_parser import HFDetectionRowParser
+from obj_det.models.data.sample_source import DetectionSampleSource
 from obj_det.models.data.ultralytics_dataset import HFUltralyticsDetectionDataset, ultralytics_detection_collate
 from obj_det.models.data.transforms import bbox_to_original, build_detection_transform
 from obj_det.models.schemas.artifact import ModelArtifact
@@ -52,16 +54,18 @@ class UltralyticsDetectionAdapter(BaseModelAdapter):
         train_cfg.output_dir.mkdir(parents=True, exist_ok=True)
         parser = HFDetectionRowParser(classes=train_cfg.classes, label_mode=train_cfg.label_mode)
         transform = build_detection_transform(train_cfg.transform, seed=train_cfg.seed)
+        train_source = DetectionSampleSource(train_ds, parser, predecode_images=train_cfg.loader.predecode_images)
+        val_source = DetectionSampleSource(val_ds, parser, predecode_images=train_cfg.loader.predecode_images)
         batch_size = train_cfg.per_device_batch_size or train_cfg.effective_batch_size
         overrides = self._train_overrides(train_cfg, batch_size=batch_size)
 
         trainer_cls = self._trainer_class(DetectionTrainer)
         trainer = trainer_cls(
             overrides=overrides,
-            train_ds=train_ds,
-            val_ds=val_ds,
-            parser=parser,
+            train_source=train_source,
+            val_source=val_source,
             transform=transform,
+            loader_cfg=train_cfg.loader,
             classes=train_cfg.classes,
             max_steps=train_cfg.max_steps,
         )
@@ -159,7 +163,7 @@ class UltralyticsDetectionAdapter(BaseModelAdapter):
             "batch": int(batch_size),
             "seed": int(train_cfg.seed),
             "amp": bool(train_cfg.amp),
-            "workers": int(train_cfg.backend_params.get("workers", 0)),
+            "workers": int(train_cfg.loader.num_workers),
             "val": False,
             "plots": False,
             "save": True,
@@ -180,11 +184,11 @@ class UltralyticsDetectionAdapter(BaseModelAdapter):
 
     def _trainer_class(self, detection_trainer_cls):
         class HFBackedDetectionTrainer(detection_trainer_cls):
-            def __init__(self, *args, train_ds, val_ds, parser, transform, classes, max_steps, **kwargs):
-                self._hf_train_ds = train_ds
-                self._hf_val_ds = val_ds
-                self._hf_parser = parser
+            def __init__(self, *args, train_source, val_source, transform, loader_cfg, classes, max_steps, **kwargs):
+                self._hf_train_source = train_source
+                self._hf_val_source = val_source
                 self._hf_transform = transform
+                self._hf_loader_cfg = loader_cfg
                 self._hf_classes = classes
                 self._hf_max_steps = max_steps
                 self._hf_seen_steps = 0
@@ -207,14 +211,14 @@ class UltralyticsDetectionAdapter(BaseModelAdapter):
                 }
 
             def get_dataloader(self, dataset_path: str, batch_size: int = 16, rank: int = 0, mode: str = "train"):
-                ds = self._hf_train_ds if mode == "train" else self._hf_val_ds
-                dataset = HFUltralyticsDetectionDataset(ds, self._hf_parser, self._hf_transform)
+                source = self._hf_train_source if mode == "train" else self._hf_val_source
+                dataset = HFUltralyticsDetectionDataset(source, self._hf_transform)
                 return DataLoader(
                     dataset,
                     batch_size=batch_size,
                     shuffle=mode == "train",
-                    num_workers=0,
                     collate_fn=ultralytics_detection_collate,
+                    **dataloader_kwargs(self._hf_loader_cfg),
                 )
 
             def get_validator(self):

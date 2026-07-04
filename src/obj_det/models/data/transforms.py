@@ -26,6 +26,9 @@ class DetectionTransform:
             seed=seed,
         )
 
+    def set_seed(self, seed: int) -> None:
+        self.transform.set_random_seed(seed)
+
     def __call__(self, sample: DetectionSample) -> DetectionSample:
         original_width = sample.width
         original_height = sample.height

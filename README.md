@@ -229,7 +229,7 @@ Minimal Python usage:
 from datasets import load_from_disk
 
 from obj_det.models.adapters.factory import model_adapter_from_config
-from obj_det.models.schemas import EvalConfig, ModelConfig, TrainConfig, TransformConfig
+from obj_det.models.schemas import DataLoaderConfig, EvalConfig, ModelConfig, TrainConfig, TransformConfig
 
 hf_ds = load_from_disk("datasets/hazydet")
 
@@ -251,6 +251,7 @@ train_cfg = TrainConfig(
     label_mode="meta",
     output_dir="runs/fasterrcnn/hazydet/seed0",
     transform=transform,
+    loader=DataLoaderConfig(num_workers=4, persistent_workers=True, prefetch_factor=2),
     max_epochs=50,
     effective_batch_size=16,
 )
@@ -303,3 +304,6 @@ configs/models/
 configs/search_spaces/
 configs/experiments/
 ```
+
+Training configs can set `train.loader.num_workers` for parallel loading and
+`train.loader.predecode_images: true` to decode the HF image bytes into RAM before training.

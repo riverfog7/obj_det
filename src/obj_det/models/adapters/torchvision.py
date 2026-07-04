@@ -12,8 +12,10 @@ from torchvision.models.detection.faster_rcnn import FastRCNNPredictor
 
 from obj_det.datasets.models import BBox
 from obj_det.models.adapters.base import BaseModelAdapter
+from obj_det.models.data.loader import dataloader_kwargs, seed_worker_transform
 from obj_det.models.data.row_parser import HFDetectionRowParser
 from obj_det.models.data.sample import DetectionSample
+from obj_det.models.data.sample_source import DetectionSampleSource
 from obj_det.models.data.transforms import bbox_to_original, build_detection_transform
 from obj_det.models.schemas.artifact import ModelArtifact
 from obj_det.models.schemas.config import PredictConfig, TrainConfig
@@ -30,12 +32,14 @@ class TorchvisionDetectionAdapter(BaseModelAdapter):
         model = self._build_model(num_classes=len(train_cfg.classes) + 1).to(device)
         parser = HFDetectionRowParser(classes=train_cfg.classes, label_mode=train_cfg.label_mode)
         transform = build_detection_transform(train_cfg.transform, seed=train_cfg.seed)
+        train_source = DetectionSampleSource(train_ds, parser, predecode_images=train_cfg.loader.predecode_images)
         batch_size = train_cfg.per_device_batch_size or train_cfg.effective_batch_size
         loader = DataLoader(
-            _TorchvisionDataset(train_ds, parser, transform),
+            _TorchvisionDataset(train_source, transform),
             batch_size=batch_size,
             shuffle=True,
             collate_fn=_collate,
+            **dataloader_kwargs(train_cfg.loader),
         )
 
         optimizer = self._optimizer(model, train_cfg)
@@ -180,16 +184,16 @@ class TorchvisionDetectionAdapter(BaseModelAdapter):
 
 
 class _TorchvisionDataset(torch.utils.data.Dataset):
-    def __init__(self, ds: Dataset, parser: HFDetectionRowParser, transform):
-        self.ds = ds
-        self.parser = parser
+    def __init__(self, source: DetectionSampleSource, transform):
+        self.source = source
         self.transform = transform
 
     def __len__(self) -> int:
-        return len(self.ds)
+        return len(self.source)
 
     def __getitem__(self, idx: int):
-        sample = self.transform(self.parser.parse(self.ds[idx]))
+        seed_worker_transform(self.transform)
+        sample = self.transform(self.source[idx])
         return _image_tensor(sample), _target_dict(sample), sample
 
 

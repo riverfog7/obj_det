@@ -44,7 +44,7 @@ def make_hf_detection_item(
         kwargs.update(processor_kwargs)
 
     encoded = processor(
-        images=np.array(sample.image, copy=True),
+        images=np.ascontiguousarray(sample.image),
         annotations=sample_to_coco_annotation(sample, image_id=image_id),
         return_tensors="pt",
         **kwargs,

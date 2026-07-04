@@ -4,25 +4,24 @@ from typing import Any
 
 import numpy as np
 import torch
-from datasets import Dataset
 from torch.utils.data import Dataset as TorchDataset
 
-from obj_det.models.data.row_parser import HFDetectionRowParser
-from obj_det.models.data.sample import DetectionSample
+from obj_det.models.data.loader import seed_worker_transform
+from obj_det.models.data.sample_source import DetectionSampleSource
 
 
 class HFUltralyticsDetectionDataset(TorchDataset):
-    def __init__(self, ds: Dataset, parser: HFDetectionRowParser, transform):
-        self.ds = ds
-        self.parser = parser
+    def __init__(self, source: DetectionSampleSource, transform):
+        self.source = source
         self.transform = transform
 
     def __len__(self) -> int:
-        return len(self.ds)
+        return len(self.source)
 
     def __getitem__(self, idx: int) -> dict[str, Any]:
-        sample = self.transform(self.parser.parse(self.ds[idx]))
-        image = torch.from_numpy(np.array(sample.image, copy=True)).permute(2, 0, 1).contiguous()
+        seed_worker_transform(self.transform)
+        sample = self.transform(self.source[idx])
+        image = torch.from_numpy(np.ascontiguousarray(sample.image)).permute(2, 0, 1).contiguous()
         cls = torch.tensor([[target.label_id] for target in sample.targets], dtype=torch.float32)
         bboxes = torch.tensor(
             [target.bbox.yolo_xywhn(sample.width, sample.height) for target in sample.targets],

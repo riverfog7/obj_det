@@ -1,5 +1,15 @@
 from .artifact import ModelArtifact
-from .config import BackendName, EvalConfig, LabelMode, ModelConfig, PredictConfig, ProtocolName, TrainConfig, TransformConfig
+from .config import (
+    BackendName,
+    DataLoaderConfig,
+    EvalConfig,
+    LabelMode,
+    ModelConfig,
+    PredictConfig,
+    ProtocolName,
+    TrainConfig,
+    TransformConfig,
+)
 from .experiment import DatasetRef, ExperimentConfig, FinalConfig
 from .prediction import PredictionObject, PredictionRecord
 from .result import EvalResult
@@ -9,6 +19,7 @@ __all__ = [
     "BackendName",
     "BestTrial",
     "DatasetRef",
+    "DataLoaderConfig",
     "EvalConfig",
     "EvalResult",
     "ExperimentConfig",

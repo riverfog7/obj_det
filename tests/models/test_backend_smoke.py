@@ -9,7 +9,7 @@ from tempfile import TemporaryDirectory
 from datasets import Dataset
 
 from obj_det.models.adapters.factory import model_adapter_from_config
-from obj_det.models.schemas import EvalConfig, ModelConfig, PredictConfig, TrainConfig, TransformConfig
+from obj_det.models.schemas import DataLoaderConfig, EvalConfig, ModelConfig, PredictConfig, TrainConfig, TransformConfig
 
 from .helpers import row
 
@@ -54,6 +54,7 @@ class BackendSmokeTest(unittest.TestCase):
                 classes=["car"],
                 output_dir=Path(tmp) / "hf",
                 transform=transform,
+                loader=DataLoaderConfig(pin_memory=False),
                 max_epochs=1,
                 max_steps=1,
                 effective_batch_size=1,
@@ -82,13 +83,14 @@ class BackendSmokeTest(unittest.TestCase):
                 classes=["car"],
                 output_dir=Path(tmp) / "yolo",
                 transform=transform,
+                loader=DataLoaderConfig(pin_memory=False),
                 max_epochs=1,
                 max_steps=1,
                 effective_batch_size=1,
                 per_device_batch_size=1,
                 amp=False,
                 hparams={"lr0": 0.001, "warmup_epochs": 0},
-                backend_params={"device": "cpu", "workers": 0, "overrides": {"verbose": False}},
+                backend_params={"device": "cpu", "overrides": {"verbose": False}},
             ))
             preds = list(adapter.predict(ds, artifact, PredictConfig(
                 classes=["car"], transform=transform, batch_size=1, conf_threshold=0.0, backend_params={"device": "cpu"}

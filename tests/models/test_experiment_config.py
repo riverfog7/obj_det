@@ -30,6 +30,13 @@ class ExperimentConfigTest(unittest.TestCase):
                     "run_key": "r",
                     "label_mode": "meta",
                     "output_dir": "runs/r",
+                    "loader": {
+                        "num_workers": 2,
+                        "pin_memory": True,
+                        "persistent_workers": True,
+                        "prefetch_factor": 2,
+                        "predecode_images": True,
+                    },
                 },
                 "eval": {},
                 "predict": {},
@@ -42,6 +49,8 @@ class ExperimentConfigTest(unittest.TestCase):
         self.assertEqual(cfg.eval.label_mode, "meta")
         self.assertEqual(cfg.predict.transform.image_size, 320)
         self.assertEqual(cfg.train.transform.horizontal_flip_p, 0.5)
+        self.assertEqual(cfg.train.loader.num_workers, 2)
+        self.assertTrue(cfg.train.loader.predecode_images)
 
     def test_relative_model_transform_and_search_space_files_load(self):
         with TemporaryDirectory() as tmp:
@@ -94,6 +103,9 @@ class ExperimentConfigTest(unittest.TestCase):
                         "train:",
                         "  run_key: r",
                         "  output_dir: runs/r",
+                        "  loader:",
+                        "    num_workers: 3",
+                        "    predecode_images: true",
                         "eval: {}",
                         "search_space_file: ../spaces/s.yaml",
                     ]
@@ -105,7 +117,50 @@ class ExperimentConfigTest(unittest.TestCase):
 
         self.assertEqual(cfg.model.key, "m")
         self.assertEqual(cfg.train.transform.image_size, 64)
+        self.assertEqual(cfg.train.loader.num_workers, 3)
+        self.assertTrue(cfg.train.loader.predecode_images)
         self.assertIn("learning_rate", cfg.search_space.params)
+
+    def test_rejects_invalid_loader_config(self):
+        with self.assertRaises(ValidationError):
+            ExperimentConfig.model_validate(
+                {
+                    "dataset": {"path": "datasets/tiny"},
+                    "classes": ["car"],
+                    "transform": {"image_size": 32},
+                    "model": {
+                        "key": "m",
+                        "backend": "torchvision",
+                        "model_name_or_path": "fasterrcnn_resnet50_fpn",
+                    },
+                    "train": {
+                        "run_key": "r",
+                        "output_dir": "runs/r",
+                        "loader": {"num_workers": -1},
+                    },
+                    "eval": {},
+                }
+            )
+
+        with self.assertRaises(ValidationError):
+            ExperimentConfig.model_validate(
+                {
+                    "dataset": {"path": "datasets/tiny"},
+                    "classes": ["car"],
+                    "transform": {"image_size": 32},
+                    "model": {
+                        "key": "m",
+                        "backend": "torchvision",
+                        "model_name_or_path": "fasterrcnn_resnet50_fpn",
+                    },
+                    "train": {
+                        "run_key": "r",
+                        "output_dir": "runs/r",
+                        "loader": {"prefetch_factor": 0},
+                    },
+                    "eval": {},
+                }
+            )
 
     def test_rejects_duplicate_model_transform_or_search_space_source(self):
         base = {

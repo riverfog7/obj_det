@@ -44,6 +44,14 @@ class TransformConfig(ModelSchema):
     color_jitter_strength: float = Field(default=0.0, ge=0.0)
 
 
+class DataLoaderConfig(ModelSchema):
+    num_workers: int = Field(default=0, ge=0)
+    pin_memory: bool = True
+    persistent_workers: bool | None = None
+    prefetch_factor: int | None = Field(default=None, gt=0)
+    predecode_images: bool = False
+
+
 class TrainConfig(ModelSchema):
     run_key: str
     classes: list[str]
@@ -51,6 +59,7 @@ class TrainConfig(ModelSchema):
     output_dir: Path
     protocol: ProtocolName = "controlled"
     transform: TransformConfig
+    loader: DataLoaderConfig = Field(default_factory=DataLoaderConfig)
     max_epochs: int | None = Field(default=50, gt=0)
     max_steps: int | None = Field(default=None, gt=0)
     effective_batch_size: int = Field(default=16, gt=0)
