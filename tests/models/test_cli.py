@@ -91,6 +91,27 @@ class CliTest(unittest.TestCase):
 
         self.assertIsNone(ExperimentRunner(exp)._logger(default_log_path=Path("runs/r/logs/events.jsonl"), run_name="r"))
 
+    def test_runner_run_config_logs_batch_metadata(self):
+        exp = ExperimentConfig.model_validate(
+            {
+                "dataset": {"path": "datasets/tiny"},
+                "classes": ["car"],
+                "preprocess": {"image_size": 32},
+                "model": {
+                    "key": "m",
+                    "backend": "torchvision",
+                    "model_name_or_path": "fasterrcnn_resnet50_fpn",
+                },
+                "train": {"run_key": "r", "output_dir": "runs/r", "batch_size": 8},
+                "eval": {},
+            }
+        )
+
+        cfg = ExperimentRunner(exp).run_config()
+
+        self.assertEqual(cfg["batch"]["batch_size"], 8)
+        self.assertEqual(cfg["batch"]["effective_batch_size"], 8 * cfg["batch"]["world_size"])
+
     def test_child_logger_factory_uses_child_name_group_and_path(self):
         exp = ExperimentConfig.model_validate(
             {

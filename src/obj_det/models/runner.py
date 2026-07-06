@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 from datasets import load_from_disk
@@ -131,7 +132,14 @@ class ExperimentRunner:
         return self.exp.train.output_dir
 
     def run_config(self) -> dict:
-        return self.exp.model_dump(mode="json")
+        world_size = int(os.environ.get("WORLD_SIZE", "1"))
+        data = self.exp.model_dump(mode="json")
+        data["batch"] = {
+            "batch_size": self.exp.train.batch_size,
+            "world_size": world_size,
+            "effective_batch_size": self.exp.train.batch_size * world_size,
+        }
+        return data
 
     def _dataset(self):
         return load_from_disk(self.exp.dataset.path)
