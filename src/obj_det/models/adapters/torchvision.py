@@ -48,7 +48,7 @@ class TorchvisionDetectionAdapter(BaseModelAdapter):
         set_seed(train_cfg.seed)
         train_cfg.output_dir.mkdir(parents=True, exist_ok=True)
 
-        model = self._build_model(num_classes=len(train_cfg.classes) + 1)
+        model = self._build_model(num_classes=len(train_cfg.classes) + 1, image_size=train_cfg.preprocess.image_size)
         parser = HFDetectionRowParser(classes=train_cfg.classes, label_mode=train_cfg.label_mode)
         transform = build_detection_transform(train_cfg.preprocess, train_cfg.augmentation, seed=train_cfg.seed)
         train_source = DetectionSampleSource(train_ds, parser, predecode_images=train_cfg.loader.predecode_images)
@@ -106,7 +106,7 @@ class TorchvisionDetectionAdapter(BaseModelAdapter):
             raise ValueError("Torchvision artifact is missing checkpoint_path")
 
         device = self._device(predict_cfg.backend_params)
-        model = self._build_model(num_classes=len(predict_cfg.classes) + 1).to(device)
+        model = self._build_model(num_classes=len(predict_cfg.classes) + 1, image_size=predict_cfg.preprocess.image_size).to(device)
         checkpoint = torch.load(artifact.checkpoint_path, map_location=device)
         model.load_state_dict(checkpoint["model_state_dict"])
         model.eval()
@@ -155,10 +155,10 @@ class TorchvisionDetectionAdapter(BaseModelAdapter):
                     predictions=predictions,
                 )
 
-    def _build_model(self, *, num_classes: int):
+    def _build_model(self, *, num_classes: int, image_size: int):
         model_name = str(self.cfg.model_name_or_path)
-        min_size = int(self.cfg.params.get("min_size", 800))
-        max_size = int(self.cfg.params.get("max_size", 1333))
+        min_size = int(self.cfg.params.get("min_size", image_size))
+        max_size = int(self.cfg.params.get("max_size", image_size))
 
         if model_name == "fasterrcnn_resnet50_fpn":
             model = fasterrcnn_resnet50_fpn(

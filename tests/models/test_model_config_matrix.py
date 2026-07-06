@@ -85,8 +85,16 @@ class ModelConfigMatrixTest(unittest.TestCase):
             with self.subTest(key=cfg.key):
                 cfg = cfg.model_copy(update={"params": {**cfg.params, "min_size": 64, "max_size": 64}}, deep=True)
                 adapter = TorchvisionDetectionAdapter(cfg)
-                model = adapter._build_model(num_classes=7)
+                model = adapter._build_model(num_classes=7, image_size=32)
                 self.assertIsNotNone(model)
+
+    def test_torchvision_model_builder_defaults_to_preprocess_image_size(self):
+        cfg = load_model_config(Path("configs/models/fasterrcnn_r50.yaml"))
+        adapter = TorchvisionDetectionAdapter(cfg)
+        model = adapter._build_model(num_classes=7, image_size=640)
+
+        self.assertEqual(model.transform.min_size, (640,))
+        self.assertEqual(model.transform.max_size, 640)
 
 
 if __name__ == "__main__":
