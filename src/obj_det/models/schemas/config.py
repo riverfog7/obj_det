@@ -54,6 +54,7 @@ class DataLoaderConfig(ModelSchema):
     persistent_workers: bool | None = None
     prefetch_factor: int | None = Field(default=None, gt=0)
     predecode_images: bool = False
+    include_samples_in_batch: bool = False
 
 
 class EvalStrategyConfig(ModelSchema):

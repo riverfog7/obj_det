@@ -48,6 +48,19 @@ class BackendDataTest(unittest.TestCase):
         self.assertEqual(tuple(item["bboxes"].shape), (1, 4))
         self.assertEqual(tuple(batch["img"].shape), (2, 3, 64, 64))
         self.assertEqual(batch["batch_idx"].tolist(), [0.0, 1.0])
+        self.assertNotIn("sample", item)
+        self.assertNotIn("samples", batch)
+
+    def test_ultralytics_dataset_can_include_samples_for_debug(self):
+        ds = Dataset.from_list([row(), row(image_id="img2")])
+        parser = HFDetectionRowParser(["car"], "meta")
+        source = DetectionSampleSource(ds, parser)
+        transform = DetectionTransform(PreprocessConfig(image_size=64))
+        dataset = HFUltralyticsDetectionDataset(source, transform, include_samples=True)
+        batch = ultralytics_detection_collate([dataset[0], dataset[1]])
+
+        self.assertIn("sample", dataset[0])
+        self.assertEqual(len(batch["samples"]), 2)
 
     def test_sample_source_can_predecode_images(self):
         ds = Dataset.from_list([row(), row(image_id="img2")])

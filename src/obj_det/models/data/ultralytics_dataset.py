@@ -12,9 +12,10 @@ from obj_det.models.data.sample_source import DetectionSampleSource
 
 
 class HFUltralyticsDetectionDataset(TorchDataset):
-    def __init__(self, source: DetectionSampleSource, transform):
+    def __init__(self, source: DetectionSampleSource, transform, *, include_samples: bool = False):
         self.source = source
         self.transform = transform
+        self.include_samples = include_samples
 
     def __len__(self) -> int:
         return len(self.source)
@@ -30,7 +31,7 @@ class HFUltralyticsDetectionDataset(TorchDataset):
             [yolo_xywhn(target.bbox_xywh, sample.width, sample.height) for target in sample.targets],
             dtype=torch.float32,
         ).reshape(-1, 4)
-        return {
+        item = {
             "img": image,
             "cls": cls,
             "bboxes": bboxes,
@@ -38,8 +39,10 @@ class HFUltralyticsDetectionDataset(TorchDataset):
             "im_file": sample.image_id,
             "ori_shape": (sample.height, sample.width),
             "resized_shape": (sample.height, sample.width),
-            "sample": sample,
         }
+        if self.include_samples:
+            item["sample"] = sample
+        return item
 
 
 def ultralytics_detection_collate(batch: list[dict[str, Any]]) -> dict[str, Any]:
@@ -52,7 +55,7 @@ def ultralytics_detection_collate(batch: list[dict[str, Any]]) -> dict[str, Any]
         bboxes.append(item["bboxes"])
         batch_idx.append(torch.full((item["cls"].shape[0],), idx, dtype=torch.float32))
 
-    return {
+    collated = {
         "img": images,
         "cls": torch.cat(cls, dim=0) if cls else torch.zeros((0, 1), dtype=torch.float32),
         "bboxes": torch.cat(bboxes, dim=0) if bboxes else torch.zeros((0, 4), dtype=torch.float32),
@@ -60,5 +63,7 @@ def ultralytics_detection_collate(batch: list[dict[str, Any]]) -> dict[str, Any]
         "im_file": [item["im_file"] for item in batch],
         "ori_shape": [item["ori_shape"] for item in batch],
         "resized_shape": [item["resized_shape"] for item in batch],
-        "samples": [item["sample"] for item in batch],
     }
+    if batch and "sample" in batch[0]:
+        collated["samples"] = [item["sample"] for item in batch]
+    return collated

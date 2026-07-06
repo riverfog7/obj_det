@@ -86,17 +86,7 @@ class UltralyticsDetectionAdapter(BaseModelAdapter):
         )
         trainer.train()
 
-        checkpoint_path = trainer.best if trainer.best.exists() else trainer.last
-        return ModelArtifact(
-            model_key=self.key,
-            backend=self.backend,
-            run_key=train_cfg.run_key,
-            classes=train_cfg.classes,
-            label_mode=train_cfg.label_mode,
-            artifact_path=Path(trainer.save_dir),
-            checkpoint_path=Path(checkpoint_path) if checkpoint_path.exists() else None,
-            meta={"ultralytics_args": dict(vars(trainer.args))},
-        )
+        return self._artifact_from_trainer(trainer, train_cfg)
 
     def predict(
         self,
@@ -197,6 +187,29 @@ class UltralyticsDetectionAdapter(BaseModelAdapter):
         overrides.update(train_cfg.backend_params.get("overrides", {}))
         return overrides
 
+    def _artifact_from_trainer(self, trainer, train_cfg: TrainConfig) -> ModelArtifact:
+        last_value = getattr(trainer, "last", None)
+        best_value = getattr(trainer, "best", None)
+        last = Path(last_value) if last_value else None
+        best = Path(best_value) if best_value else None
+        checkpoint_path = last if last is not None and last.exists() else None
+        meta = {
+            "ultralytics_args": dict(vars(trainer.args)),
+            "ultralytics_last": str(last) if last is not None else None,
+            "ultralytics_best": str(best) if best is not None else None,
+            "checkpoint_selection": "last_external_eval",
+        }
+        return ModelArtifact(
+            model_key=self.key,
+            backend=self.backend,
+            run_key=train_cfg.run_key,
+            classes=train_cfg.classes,
+            label_mode=train_cfg.label_mode,
+            artifact_path=Path(trainer.save_dir),
+            checkpoint_path=checkpoint_path,
+            meta=meta,
+        )
+
     def _trainer_class(self, detection_trainer_cls):
         class HFBackedDetectionTrainer(detection_trainer_cls):
             def __init__(
@@ -272,7 +285,11 @@ class UltralyticsDetectionAdapter(BaseModelAdapter):
 
             def get_dataloader(self, dataset_path: str, batch_size: int = 16, rank: int = 0, mode: str = "train"):
                 source = self._hf_train_source if mode == "train" else self._hf_val_source
-                dataset = HFUltralyticsDetectionDataset(source, self._hf_transform)
+                dataset = HFUltralyticsDetectionDataset(
+                    source,
+                    self._hf_transform,
+                    include_samples=bool(getattr(self._hf_loader_cfg, "include_samples_in_batch", False)),
+                )
                 return DataLoader(
                     dataset,
                     batch_size=batch_size,

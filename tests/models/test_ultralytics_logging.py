@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 
 import torch
 
 from obj_det.models.adapters.ultralytics import UltralyticsDetectionAdapter
-from obj_det.models.schemas import ModelConfig
+from obj_det.models.schemas import PreprocessConfig, ModelConfig, TrainConfig
 
 
 class RecordingLogger:
@@ -70,6 +72,36 @@ class UltralyticsLoggingTest(unittest.TestCase):
         self.assertEqual(len(logger.events), 2)
         self.assertEqual(logger.events[1][1], 3)
         self.assertEqual(logger.events[1][0]["train/box_loss"], 0.5)
+
+    def test_artifact_uses_last_checkpoint_for_external_eval(self):
+        adapter = UltralyticsDetectionAdapter(
+            ModelConfig(key="yolo", backend="ultralytics", model_name_or_path="yolo11n.pt")
+        )
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            last = root / "last.pt"
+            best = root / "best.pt"
+            last.write_text("last", encoding="utf-8")
+            best.write_text("best", encoding="utf-8")
+            trainer = SimpleNamespace(
+                save_dir=root,
+                last=last,
+                best=best,
+                args=SimpleNamespace(batch=8),
+            )
+            artifact = adapter._artifact_from_trainer(
+                trainer,
+                TrainConfig(
+                    run_key="r",
+                    classes=["car"],
+                    output_dir=root,
+                    preprocess=PreprocessConfig(image_size=64),
+                ),
+            )
+
+        self.assertEqual(artifact.checkpoint_path, last)
+        self.assertEqual(artifact.meta["ultralytics_best"], str(best))
+        self.assertEqual(artifact.meta["checkpoint_selection"], "last_external_eval")
 
 
 if __name__ == "__main__":
