@@ -10,7 +10,7 @@ from datasets import Dataset
 from obj_det.datasets.models import BBox
 from obj_det.models.adapters.base import BaseModelAdapter
 from obj_det.models.data.hf_dataset import HFTrainerDetectionDataset
-from obj_det.models.data.hf_targets import hf_detection_collate
+from obj_det.models.data.hf_targets import make_hf_detection_collate
 from obj_det.models.data.row_parser import HFDetectionRowParser
 from obj_det.models.data.sample_source import DetectionSampleSource
 from obj_det.models.data.transforms import bbox_to_original, build_detection_transform
@@ -61,8 +61,8 @@ class HFTrainerDetectionAdapter(BaseModelAdapter):
         processor_kwargs = train_cfg.backend_params.get("processor_kwargs", {"do_resize": False})
         train_source = DetectionSampleSource(train_ds, parser, predecode_images=train_cfg.loader.predecode_images)
         val_source = DetectionSampleSource(val_ds, parser, predecode_images=train_cfg.loader.predecode_images)
-        train_data = HFTrainerDetectionDataset(train_source, transform, processor, processor_kwargs)
-        val_data = HFTrainerDetectionDataset(val_source, transform, processor, processor_kwargs)
+        train_data = HFTrainerDetectionDataset(train_source, transform)
+        val_data = HFTrainerDetectionDataset(val_source, transform)
 
         args = self._training_args(train_cfg)
         trainer = Trainer(
@@ -70,7 +70,7 @@ class HFTrainerDetectionAdapter(BaseModelAdapter):
             args=args,
             train_dataset=train_data,
             eval_dataset=val_data,
-            data_collator=hf_detection_collate,
+            data_collator=make_hf_detection_collate(processor, processor_kwargs),
             processing_class=processor,
             callbacks=[make_transformers_logging_callback(TrainerCallback, logger, log_prefix)] if logger else None,
         )

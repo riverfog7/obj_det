@@ -7,8 +7,9 @@ from datasets import Dataset
 
 from obj_det.datasets.models import BBox
 from obj_det.models.adapters.torchvision import _TorchvisionTrainerDataset, _torchvision_collate
+from obj_det.models.data.hf_dataset import HFTrainerDetectionDataset
 from obj_det.models.data.loader import dataloader_kwargs
-from obj_det.models.data.hf_targets import sample_to_coco_annotation
+from obj_det.models.data.hf_targets import make_hf_detection_collate, sample_to_coco_annotation
 from obj_det.models.data.row_parser import HFDetectionRowParser
 from obj_det.models.data.sample_source import DetectionSampleSource
 from obj_det.models.data.transforms import DetectionTransform
@@ -71,6 +72,34 @@ class BackendDataTest(unittest.TestCase):
         self.assertIsNotNone(source.samples)
         self.assertEqual(source[0].image_id, "img1")
         self.assertEqual(source[1].targets[0].label, "car")
+
+    def test_hf_trainer_collator_batches_processor_calls(self):
+        class FakeProcessor:
+            def __init__(self):
+                self.calls = []
+
+            def __call__(self, **kwargs):
+                self.calls.append(kwargs)
+                batch_size = len(kwargs["images"])
+                return {
+                    "pixel_values": torch.zeros((batch_size, 3, 64, 64)),
+                    "labels": kwargs["annotations"],
+                }
+
+        import torch
+
+        ds = Dataset.from_list([row(), row(image_id="img2")])
+        parser = HFDetectionRowParser(["car"], "meta")
+        source = DetectionSampleSource(ds, parser)
+        transform = DetectionTransform(PreprocessConfig(image_size=64))
+        dataset = HFTrainerDetectionDataset(source, transform)
+        processor = FakeProcessor()
+        collate = make_hf_detection_collate(processor)
+        batch = collate([dataset[0], dataset[1]])
+
+        self.assertEqual(len(processor.calls), 1)
+        self.assertEqual(len(processor.calls[0]["images"]), 2)
+        self.assertEqual(tuple(batch["pixel_values"].shape), (2, 3, 64, 64))
 
     def test_dataloader_kwargs_only_pass_worker_options_when_enabled(self):
         self.assertEqual(

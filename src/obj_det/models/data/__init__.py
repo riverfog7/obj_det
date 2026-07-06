@@ -1,6 +1,6 @@
 from .bbox import BBoxXYWH, area_xywh, bbox_xywh, clip_xywh, xywh_to_xyxy, xyxy_to_xywh, yolo_xywhn
 from .collate import detection_collate
-from .hf_targets import hf_detection_collate, make_hf_detection_item, sample_to_coco_annotation
+from .hf_targets import make_hf_detection_collate, sample_to_coco_annotation
 from .loader import dataloader_kwargs
 from .row_parser import HFDetectionRowParser
 from .sample import DetectionBatch, DetectionSample, DetectionTarget
@@ -28,8 +28,7 @@ __all__ = [
     "clip_xywh",
     "dataloader_kwargs",
     "detection_collate",
-    "hf_detection_collate",
-    "make_hf_detection_item",
+    "make_hf_detection_collate",
     "sample_to_coco_annotation",
     "ultralytics_detection_collate",
     "xywh_to_xyxy",
