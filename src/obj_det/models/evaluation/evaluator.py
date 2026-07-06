@@ -8,6 +8,7 @@ from datasets import Dataset
 from pycocotools.coco import COCO
 from pycocotools.cocoeval import COCOeval
 
+from obj_det.models.data.bbox import area_xywh
 from obj_det.models.data.row_parser import HFDetectionRowParser
 from obj_det.models.data.sample import DetectionSample
 from obj_det.models.evaluation.grouping import image_ids_by_field
@@ -26,7 +27,7 @@ class DetectionEvaluator:
         model_key: str,
     ) -> EvalResult:
         parser = HFDetectionRowParser(classes=eval_cfg.classes, label_mode=eval_cfg.label_mode)
-        samples = [parser.parse(row) for row in ds]
+        samples = [parser.parse_targets_only(row) for row in ds]
         pred_list = list(predictions)
         metrics = self._evaluate_subset(samples, pred_list, eval_cfg.classes)
 
@@ -133,8 +134,8 @@ class DetectionEvaluator:
                         "id": ann_id,
                         "image_id": image_id_to_int[sample.image_id],
                         "category_id": target.label_id + 1,
-                        "bbox": list(target.bbox.xywh()),
-                        "area": target.bbox.area,
+                        "bbox": list(target.bbox_xywh),
+                        "area": area_xywh(target.bbox_xywh),
                         "iscrowd": int(target.iscrowd),
                     }
                 )

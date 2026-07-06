@@ -1,3 +1,4 @@
+from .bbox import BBoxXYWH, area_xywh, bbox_xywh, clip_xywh, xywh_to_xyxy, xyxy_to_xywh, yolo_xywhn
 from .collate import detection_collate
 from .hf_targets import hf_detection_collate, make_hf_detection_item, sample_to_coco_annotation
 from .loader import dataloader_kwargs
@@ -12,6 +13,7 @@ from .transforms import (
 )
 
 __all__ = [
+    "BBoxXYWH",
     "DetectionTransform",
     "DetectionBatch",
     "DetectionSample",
@@ -19,12 +21,18 @@ __all__ = [
     "DetectionTarget",
     "HFDetectionRowParser",
     "HFUltralyticsDetectionDataset",
+    "area_xywh",
     "bbox_to_original",
+    "bbox_xywh",
     "build_detection_transform",
+    "clip_xywh",
     "dataloader_kwargs",
     "detection_collate",
     "hf_detection_collate",
     "make_hf_detection_item",
     "sample_to_coco_annotation",
     "ultralytics_detection_collate",
+    "xywh_to_xyxy",
+    "xyxy_to_xywh",
+    "yolo_xywhn",
 ]

@@ -8,7 +8,7 @@ from typing import Any
 import numpy as np
 from PIL import Image
 
-from obj_det.datasets.models import BBox
+from obj_det.models.data.bbox import bbox_xywh
 from obj_det.models.data.sample import DetectionSample, DetectionTarget
 from obj_det.models.schemas.config import LabelMode
 
@@ -24,8 +24,8 @@ class HFDetectionRowParser:
         self.label_mode = label_mode
         self.class_to_id = {name: idx for idx, name in enumerate(classes)}
 
-    def parse(self, row: dict[str, Any]) -> DetectionSample:
-        image = self.decode_image(row["image"])
+    def parse(self, row: dict[str, Any], *, decode_image: bool = True) -> DetectionSample:
+        image = self.decode_image(row["image"]) if decode_image else None
         targets: list[DetectionTarget] = []
 
         for obj in row.get("objects", []):
@@ -41,14 +41,14 @@ class HFDetectionRowParser:
                 continue
 
             try:
-                bbox = BBox.from_xywh(list(obj["bbox"]))
+                bbox = bbox_xywh(obj["bbox"])
             except (KeyError, TypeError, ValueError) as exc:
                 logger.warning("Skipping object with invalid bbox: %s", exc)
                 continue
 
             targets.append(
                 DetectionTarget(
-                    bbox=bbox,
+                    bbox_xywh=bbox,
                     label=label,
                     label_id=self.class_to_id[label],
                     iscrowd=bool(obj.get("iscrowd", False)),
@@ -69,6 +69,9 @@ class HFDetectionRowParser:
             is_synthetic=row.get("is_synthetic"),
             meta=self._parse_json_field(row.get("meta_json")),
         )
+
+    def parse_targets_only(self, row: dict[str, Any]) -> DetectionSample:
+        return self.parse(row, decode_image=False)
 
     def decode_image(self, image_field: Any) -> np.ndarray:
         if isinstance(image_field, dict):

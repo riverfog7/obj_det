@@ -6,6 +6,7 @@ from typing import Any
 import numpy as np
 import torch
 
+from obj_det.models.data.bbox import area_xywh
 from obj_det.models.data.sample import DetectionSample
 
 
@@ -24,8 +25,8 @@ def sample_to_coco_annotation(sample: DetectionSample, *, image_id: int) -> dict
                 "id": idx,
                 "image_id": image_id,
                 "category_id": target.label_id,
-                "bbox": list(target.bbox.xywh()),
-                "area": target.bbox.area,
+                "bbox": list(target.bbox_xywh),
+                "area": area_xywh(target.bbox_xywh),
                 "iscrowd": int(target.iscrowd),
             }
         )

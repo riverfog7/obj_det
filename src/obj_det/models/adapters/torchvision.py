@@ -21,6 +21,7 @@ from transformers import Trainer, TrainerCallback
 
 from obj_det.datasets.models import BBox
 from obj_det.models.adapters.base import BaseModelAdapter
+from obj_det.models.data.bbox import area_xywh, xywh_to_xyxy
 from obj_det.models.data.loader import seed_worker_transform
 from obj_det.models.data.row_parser import HFDetectionRowParser
 from obj_det.models.data.sample import DetectionSample
@@ -345,14 +346,16 @@ class _TorchvisionTrainerDataset(torch.utils.data.Dataset):
 
 
 def _image_tensor(sample: DetectionSample) -> torch.Tensor:
+    if sample.image is None:
+        raise ValueError("TorchVision tensor conversion requires decoded image data")
     array = sample.image.astype("float32") / 255.0
     return torch.from_numpy(array).permute(2, 0, 1).contiguous()
 
 
 def _target_dict(sample: DetectionSample) -> dict[str, torch.Tensor]:
-    boxes = [target.bbox.xyxy() for target in sample.targets]
+    boxes = [xywh_to_xyxy(target.bbox_xywh) for target in sample.targets]
     labels = [target.label_id + 1 for target in sample.targets]
-    area = [target.bbox.area for target in sample.targets]
+    area = [area_xywh(target.bbox_xywh) for target in sample.targets]
     iscrowd = [int(target.iscrowd) for target in sample.targets]
 
     return {

@@ -5,12 +5,12 @@ from typing import Any
 
 import numpy as np
 
-from obj_det.datasets.models import BBox
+from obj_det.models.data.bbox import BBoxXYWH
 
 
 @dataclass
 class DetectionTarget:
-    bbox: BBox
+    bbox_xywh: BBoxXYWH
     label: str
     label_id: int
     iscrowd: bool = False
@@ -19,7 +19,7 @@ class DetectionTarget:
 
 @dataclass
 class DetectionSample:
-    image: np.ndarray
+    image: np.ndarray | None
     image_id: str
     dataset: str
     split: str

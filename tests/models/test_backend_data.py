@@ -5,6 +5,7 @@ from pathlib import Path
 
 from datasets import Dataset
 
+from obj_det.datasets.models import BBox
 from obj_det.models.adapters.torchvision import _TorchvisionTrainerDataset, _torchvision_collate
 from obj_det.models.data.loader import dataloader_kwargs
 from obj_det.models.data.hf_targets import sample_to_coco_annotation
@@ -25,6 +26,13 @@ class BackendDataTest(unittest.TestCase):
         self.assertEqual(ann["image_id"], 7)
         self.assertEqual(ann["annotations"][0]["category_id"], 0)
         self.assertEqual(ann["annotations"][0]["bbox"], [4.0, 5.0, 8.0, 10.0])
+
+    def test_runtime_targets_do_not_use_pydantic_bbox(self):
+        sample = HFDetectionRowParser(["car"], "meta").parse(row())
+
+        self.assertIsInstance(sample.targets[0].bbox_xywh, tuple)
+        self.assertNotIsInstance(sample.targets[0].bbox_xywh, BBox)
+        self.assertFalse(hasattr(sample.targets[0], "bbox"))
 
     def test_ultralytics_dataset_and_collate(self):
         ds = Dataset.from_list([row(), row(image_id="img2")])

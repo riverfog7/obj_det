@@ -20,6 +20,7 @@ class RowParserTest(unittest.TestCase):
         self.assertEqual(sample.image.dtype, np.uint8)
         self.assertEqual(sample.targets[0].label, "car")
         self.assertEqual(sample.targets[0].label_id, 0)
+        self.assertEqual(sample.targets[0].bbox_xywh, (4.0, 5.0, 8.0, 10.0))
         self.assertEqual(sample.meta["row"], "img1")
 
     def test_native_mode_keeps_native_label(self):
@@ -36,6 +37,16 @@ class RowParserTest(unittest.TestCase):
 
         self.assertEqual(sample.targets[0].label, "automobile")
         self.assertEqual(sample.targets[0].label_id, 0)
+
+    def test_parse_targets_only_does_not_decode_image(self):
+        class NoDecodeParser(HFDetectionRowParser):
+            def decode_image(self, image_field):
+                raise AssertionError("decode_image should not be called")
+
+        sample = NoDecodeParser(classes=["car"], label_mode="meta").parse_targets_only(row())
+
+        self.assertIsNone(sample.image)
+        self.assertEqual(sample.targets[0].bbox_xywh, (4.0, 5.0, 8.0, 10.0))
 
     def test_drops_ignore_missing_meta_and_unknown_label(self):
         parser = HFDetectionRowParser(classes=["car"], label_mode="meta")

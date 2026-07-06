@@ -8,6 +8,7 @@ import cv2
 import numpy as np
 
 from obj_det.datasets.models import BBox
+from obj_det.models.data.bbox import bbox_xywh, clip_xywh
 from obj_det.models.data.sample import DetectionSample, DetectionTarget
 from obj_det.models.schemas.config import AugmentationConfig, PreprocessConfig
 
@@ -37,11 +38,14 @@ class DetectionTransform:
         self.transform.set_random_seed(seed)
 
     def __call__(self, sample: DetectionSample) -> DetectionSample:
+        if sample.image is None:
+            raise ValueError("DetectionTransform requires decoded image data")
+
         original_width = sample.width
         original_height = sample.height
         result = self.transform(
             image=np.ascontiguousarray(sample.image),
-            bboxes=[target.bbox.xywh() for target in sample.targets],
+            bboxes=[target.bbox_xywh for target in sample.targets],
             target_indices=list(range(len(sample.targets))),
         )
 
@@ -51,12 +55,12 @@ class DetectionTransform:
 
         for bbox_values, target_index in zip(result["bboxes"], result["target_indices"]):
             try:
-                bbox = BBox.from_xywh(list(bbox_values)).clipped(width, height)
+                bbox = clip_xywh(bbox_xywh(bbox_values), width, height)
             except ValueError:
                 continue
             if bbox is None:
                 continue
-            targets.append(replace(sample.targets[int(round(float(target_index)))], bbox=bbox))
+            targets.append(replace(sample.targets[int(round(float(target_index)))], bbox_xywh=bbox))
 
         meta = dict(sample.meta)
         meta["preprocess"] = _preprocess_meta(original_width, original_height, self.preprocess.image_size)

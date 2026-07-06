@@ -4,6 +4,7 @@ import unittest
 
 from obj_det.models.data.row_parser import HFDetectionRowParser
 from obj_det.models.data.transforms import DetectionTransform, bbox_to_original, build_detection_transform
+from obj_det.datasets.models import BBox
 from obj_det.models.schemas import AugmentationConfig, PreprocessConfig
 
 from .helpers import row
@@ -23,10 +24,10 @@ class TransformTest(unittest.TestCase):
         )(sample)
 
         self.assertEqual(transformed.image.shape, (32, 32, 3))
-        self.assertAlmostEqual(transformed.targets[0].bbox.x, 20.0, places=6)
-        self.assertAlmostEqual(transformed.targets[0].bbox.y, 9.0, places=6)
-        self.assertAlmostEqual(transformed.targets[0].bbox.w, 8.0, places=6)
-        self.assertAlmostEqual(transformed.targets[0].bbox.h, 10.0, places=6)
+        self.assertEqual(transformed.targets[0].bbox_xywh[0], 20.0)
+        self.assertAlmostEqual(transformed.targets[0].bbox_xywh[1], 9.0, places=6)
+        self.assertEqual(transformed.targets[0].bbox_xywh[2], 8.0)
+        self.assertAlmostEqual(transformed.targets[0].bbox_xywh[3], 10.0, places=6)
 
     def test_basic_transform_resize_pad_and_inverse(self):
         sample = HFDetectionRowParser(["car"], "meta").parse(row(size=(32, 24)))
@@ -38,14 +39,14 @@ class TransformTest(unittest.TestCase):
                 color_jitter_strength=0.0,
             ),
         )(sample)
-        bbox = transformed.targets[0].bbox
-        restored = bbox_to_original(bbox, transformed.meta["preprocess"])
+        bbox = transformed.targets[0].bbox_xywh
+        restored = bbox_to_original(BBox.from_xywh(bbox), transformed.meta["preprocess"])
 
         self.assertEqual(transformed.image.shape, (64, 64, 3))
-        self.assertAlmostEqual(bbox.x, 8.0, places=6)
-        self.assertAlmostEqual(bbox.y, 18.0, places=6)
-        self.assertAlmostEqual(bbox.w, 16.0, places=6)
-        self.assertAlmostEqual(bbox.h, 20.0, places=6)
+        self.assertEqual(bbox[0], 8.0)
+        self.assertAlmostEqual(bbox[1], 18.0, places=6)
+        self.assertEqual(bbox[2], 16.0)
+        self.assertAlmostEqual(bbox[3], 20.0, places=6)
         self.assertIsNotNone(restored)
         self.assertAlmostEqual(restored.x, 4.0, places=6)
         self.assertAlmostEqual(restored.y, 5.0, places=6)
