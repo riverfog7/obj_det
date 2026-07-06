@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import unittest
 
+import numpy as np
+
 from obj_det.models.data.row_parser import HFDetectionRowParser
 from obj_det.models.data.transforms import DetectionTransform, bbox_to_original, build_detection_transform
 from obj_det.datasets.models import BBox
@@ -74,6 +76,16 @@ class TransformTest(unittest.TestCase):
 
         self.assertEqual(transformed.image.shape, (64, 64, 3))
         self.assertIn("preprocess", transformed.meta)
+
+    def test_preprocess_only_transform_is_deterministic(self):
+        sample = HFDetectionRowParser(["car"], "meta").parse(row(size=(32, 24)))
+        transform = build_detection_transform(PreprocessConfig(image_size=64))
+
+        first = transform(sample)
+        second = transform(sample)
+
+        self.assertTrue(np.array_equal(first.image, second.image))
+        self.assertEqual(first.targets[0].bbox_xywh, second.targets[0].bbox_xywh)
 
 if __name__ == "__main__":
     unittest.main()
