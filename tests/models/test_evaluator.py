@@ -29,7 +29,14 @@ class EvaluatorTest(unittest.TestCase):
         result = DetectionEvaluator().evaluate(
             ds,
             predictions,
-            EvalConfig(classes=["car"], label_mode="meta", preprocess=PreprocessConfig(image_size=32)),
+            EvalConfig(
+                classes=["car"],
+                label_mode="meta",
+                preprocess=PreprocessConfig(image_size=32),
+                compute_per_class=True,
+                compute_per_condition=True,
+                compute_per_domain=True,
+            ),
             model_key="dummy",
         )
 

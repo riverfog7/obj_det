@@ -42,14 +42,17 @@ class TuningRunner:
             load_if_exists=bool(tuning_cfg.storage),
         )
         trial_results: list[TrialResult] = []
+        trial_hparams: dict[int, dict[str, Any]] = {}
 
         def objective(trial) -> float:
-            hparams = self._sample_hparams(trial, search_space)
+            sampled_hparams = self._sample_hparams(trial, search_space)
+            hparams = {**base_train_cfg.hparams, **sampled_hparams}
+            trial_hparams[trial.number] = hparams
             trial_output_dir = tuning_cfg.output_dir / f"trial_{trial.number:04d}"
             train_cfg = base_train_cfg.model_copy(
                 update={
                     "output_dir": trial_output_dir,
-                    "hparams": {**base_train_cfg.hparams, **hparams},
+                    "hparams": hparams,
                 },
                 deep=True,
             )
@@ -81,7 +84,7 @@ class TuningRunner:
                 result = adapter.evaluate(
                     val_ds,
                     artifact,
-                    eval_cfg,
+                    self._hpo_eval_cfg(eval_cfg, detailed=tuning_cfg.detailed_eval),
                     logger=logger,
                     log_prefix="val",
                 )
@@ -125,7 +128,7 @@ class TuningRunner:
             objective,
             n_trials=tuning_cfg.n_trials,
             timeout=tuning_cfg.timeout_seconds,
-            catch=(Exception,),
+            catch=(Exception,) if tuning_cfg.catch_trial_errors else (),
         )
 
         try:
@@ -142,12 +145,25 @@ class TuningRunner:
         best = BestTrial(
             study_name=tuning_cfg.study_name,
             trial_number=best_trial.number,
-            hparams=dict(best_trial.params),
+            hparams=trial_hparams.get(best_trial.number, dict(best_trial.params)),
             metric_name=tuning_cfg.objective_metric,
             metric_value=float(study.best_value),
             artifact_path=best_artifact,
         )
         return TuningResult(study_name=tuning_cfg.study_name, best_trial=best, trials=trial_results)
+
+    def _hpo_eval_cfg(self, eval_cfg: EvalConfig, *, detailed: bool) -> EvalConfig:
+        if detailed:
+            return eval_cfg
+        return eval_cfg.model_copy(
+            update={
+                "compute_per_class": False,
+                "compute_per_condition": False,
+                "compute_per_domain": False,
+                "compute_per_size": False,
+            },
+            deep=True,
+        )
 
     def _sample_hparams(self, trial, search_space: SearchSpace) -> dict[str, Any]:
         sampled = {}

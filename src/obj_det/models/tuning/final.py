@@ -39,13 +39,14 @@ def run_final_seeds(
     """Train/evaluate final runs for fixed seeds without choosing a best seed."""
 
     runs: list[FinalSeedRun] = []
+    final_hparams = {**base_train_cfg.hparams, **hparams}
     for seed in seeds:
         run_output_dir = (output_dir or base_train_cfg.output_dir) / f"final_seed{seed}"
         train_cfg = base_train_cfg.model_copy(
             update={
                 "run_key": f"{base_train_cfg.run_key}_seed{seed}",
                 "seed": seed,
-                "hparams": hparams,
+                "hparams": final_hparams,
                 "output_dir": run_output_dir,
             },
             deep=True,
@@ -62,7 +63,7 @@ def run_final_seeds(
                         **(run_config or {}),
                         "final": {
                             "seed": seed,
-                            "hparams": hparams,
+                            "hparams": final_hparams,
                         },
                     },
                 )

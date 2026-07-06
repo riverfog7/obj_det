@@ -116,10 +116,10 @@ class EvalConfig(ModelSchema):
     preprocess: PreprocessConfig
     conf_threshold: float = Field(default=0.001, ge=0.0, le=1.0)
     iou_threshold: float = Field(default=0.7, ge=0.0, le=1.0)
-    compute_per_class: bool = True
-    compute_per_condition: bool = True
-    compute_per_domain: bool = True
-    compute_per_size: bool = True
+    compute_per_class: bool = False
+    compute_per_condition: bool = False
+    compute_per_domain: bool = False
+    compute_per_size: bool = False
     primary_metric: str = "map_50_95"
     backend_params: dict[str, Any] = Field(default_factory=dict)
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from .base import ModelSchema
 
@@ -23,11 +23,37 @@ class TuningConfig(ModelSchema):
     objective_metric: str = "map_50_95"
     storage: str | None = None
     output_dir: Path
+    catch_trial_errors: bool = False
+    detailed_eval: bool = False
     meta: dict[str, Any] = Field(default_factory=dict)
 
 
 class SearchSpace(ModelSchema):
     params: dict[str, dict[str, Any]] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def validate_specs(self) -> "SearchSpace":
+        for name, spec in self.params.items():
+            kind = spec.get("type")
+            if kind not in {"float", "int", "categorical"}:
+                raise ValueError(f"Invalid search space for {name!r}: type must be float, int, or categorical")
+
+            if kind in {"float", "int"}:
+                if "choices" in spec:
+                    raise ValueError(f"Invalid search space for {name!r}: choices is only valid for categorical")
+                if "low" not in spec or "high" not in spec:
+                    raise ValueError(f"Invalid search space for {name!r}: {kind} requires low and high")
+                if spec["low"] > spec["high"]:
+                    raise ValueError(f"Invalid search space for {name!r}: low must be <= high")
+                continue
+
+            if "log" in spec:
+                raise ValueError(f"Invalid search space for {name!r}: log is only valid for float or int")
+            choices = spec.get("choices")
+            if not isinstance(choices, list) or not choices:
+                raise ValueError(f"Invalid search space for {name!r}: categorical requires non-empty choices")
+
+        return self
 
 
 class TrialResult(ModelSchema):

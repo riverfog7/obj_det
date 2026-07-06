@@ -190,6 +190,19 @@ class TuningTest(unittest.TestCase):
         else:
             sys.modules["optuna"] = self.old_optuna
 
+    def test_search_space_validation_rejects_bad_specs(self):
+        bad_specs = [
+            {"lr": {"type": "FLOAT", "low": 0.0, "high": 1.0}},
+            {"lr": {"type": "float", "low": 1.0, "high": 0.0}},
+            {"lr": {"type": "float", "low": 0.0}},
+            {"opt": {"type": "categorical", "choices": []}},
+            {"opt": {"type": "categorical", "choices": ["a"], "log": True}},
+        ]
+
+        for params in bad_specs:
+            with self.subTest(params=params), self.assertRaises(ValueError):
+                SearchSpace(params=params)
+
     def test_hpo_records_failed_trial_and_selects_best(self):
         sys.modules["optuna"] = FakeOptuna([
             {"score": 0.1, "fail": True},
@@ -210,7 +223,7 @@ class TuningTest(unittest.TestCase):
                     "score": {"type": "float", "low": 0.0, "high": 1.0},
                     "fail": {"type": "categorical", "choices": [True, False]},
                 }),
-                tuning_cfg=TuningConfig(study_name="s", n_trials=3, output_dir=Path(tmp)),
+                tuning_cfg=TuningConfig(study_name="s", n_trials=3, output_dir=Path(tmp), catch_trial_errors=True),
             )
 
         self.assertEqual(len(result.trials), 3)
@@ -218,6 +231,63 @@ class TuningTest(unittest.TestCase):
         self.assertIsNotNone(result.best_trial)
         self.assertEqual(result.best_trial.trial_number, 1)
         self.assertEqual(result.best_trial.metric_value, 0.3)
+
+    def test_hpo_fails_fast_by_default(self):
+        sys.modules["optuna"] = FakeOptuna([
+            {"score": 0.1, "fail": True},
+            {"score": 0.3, "fail": False},
+        ])
+        ds = Dataset.from_list([row()])
+        adapter = DummyAdapter()
+        with TemporaryDirectory() as tmp:
+            preprocess = PreprocessConfig(image_size=32)
+            with self.assertRaises(RuntimeError):
+                TuningRunner().optimize(
+                    adapter=adapter,
+                    train_ds=ds,
+                    val_ds=ds,
+                    base_train_cfg=TrainConfig(run_key="r", classes=["car"], output_dir=Path(tmp) / "base", preprocess=preprocess),
+                    eval_cfg=EvalConfig(classes=["car"], preprocess=preprocess),
+                    search_space=SearchSpace(params={
+                        "score": {"type": "float", "low": 0.0, "high": 1.0},
+                        "fail": {"type": "categorical", "choices": [True, False]},
+                    }),
+                    tuning_cfg=TuningConfig(study_name="s", n_trials=2, output_dir=Path(tmp)),
+                )
+
+        self.assertEqual(len(adapter.trained), 1)
+
+    def test_hpo_stores_merged_hparams_for_trials_and_best(self):
+        sys.modules["optuna"] = FakeOptuna([
+            {"score": 0.3, "fail": False},
+        ])
+        ds = Dataset.from_list([row()])
+        adapter = DummyAdapter()
+        with TemporaryDirectory() as tmp:
+            preprocess = PreprocessConfig(image_size=32)
+            result = TuningRunner().optimize(
+                adapter=adapter,
+                train_ds=ds,
+                val_ds=ds,
+                base_train_cfg=TrainConfig(
+                    run_key="r",
+                    classes=["car"],
+                    output_dir=Path(tmp) / "base",
+                    preprocess=preprocess,
+                    hparams={"warmup_epochs": 3},
+                ),
+                eval_cfg=EvalConfig(classes=["car"], preprocess=preprocess),
+                search_space=SearchSpace(params={
+                    "score": {"type": "float", "low": 0.0, "high": 1.0},
+                    "fail": {"type": "categorical", "choices": [True, False]},
+                }),
+                tuning_cfg=TuningConfig(study_name="s", n_trials=1, output_dir=Path(tmp)),
+            )
+
+        expected = {"warmup_epochs": 3, "score": 0.3, "fail": False}
+        self.assertEqual(adapter.trained[0][1], expected)
+        self.assertEqual(result.trials[0].hparams, expected)
+        self.assertEqual(result.best_trial.hparams, expected)
 
     def test_hpo_logs_trial_train_eval_and_objective(self):
         sys.modules["optuna"] = FakeOptuna([
@@ -275,7 +345,7 @@ class TuningTest(unittest.TestCase):
                     "score": {"type": "float", "low": 0.0, "high": 1.0},
                     "fail": {"type": "categorical", "choices": [True, False]},
                 }),
-                tuning_cfg=TuningConfig(study_name="s", n_trials=2, output_dir=Path(tmp)),
+                tuning_cfg=TuningConfig(study_name="s", n_trials=2, output_dir=Path(tmp), catch_trial_errors=True),
             )
 
         self.assertEqual([logger.run_name for logger in logger_factory.loggers], ["s_trial_0000", "s_trial_0001"])
@@ -333,6 +403,30 @@ class TuningTest(unittest.TestCase):
         self.assertEqual([run.seed for run in runs], [0, 1, 2])
         self.assertEqual([item[0] for item in adapter.trained], [0, 1, 2])
         self.assertEqual(len(adapter.evaluated), 6)
+
+    def test_final_seeds_merge_base_and_best_hparams(self):
+        ds = Dataset.from_list([row()])
+        adapter = DummyAdapter()
+        with TemporaryDirectory() as tmp:
+            preprocess = PreprocessConfig(image_size=32)
+            run_final_seeds(
+                adapter=adapter,
+                train_ds=ds,
+                val_ds=ds,
+                test_ds=ds,
+                base_train_cfg=TrainConfig(
+                    run_key="final",
+                    classes=["car"],
+                    output_dir=Path(tmp),
+                    preprocess=preprocess,
+                    hparams={"warmup_epochs": 3},
+                ),
+                eval_cfg=EvalConfig(classes=["car"], preprocess=preprocess),
+                hparams={"score": 0.4},
+                seeds=[0],
+            )
+
+        self.assertEqual(adapter.trained[0][1], {"warmup_epochs": 3, "score": 0.4})
 
     def test_final_seeds_create_one_logger_run_per_seed(self):
         ds = Dataset.from_list([row()])
