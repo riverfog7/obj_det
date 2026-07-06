@@ -9,7 +9,7 @@ from obj_det.datasets.models import BBox
 from obj_det.models.adapters.torchvision import _TorchvisionTrainerDataset, _torchvision_collate
 from obj_det.models.data.hf_dataset import HFTrainerDetectionDataset
 from obj_det.models.data.loader import dataloader_kwargs
-from obj_det.models.data.profiling import measure_dataloader, measure_decode_backend
+from obj_det.models.data.profiling import measure_dataloader, measure_decode_backend, measure_transform
 from obj_det.models.data.hf_targets import make_hf_detection_collate, sample_to_coco_annotation
 from obj_det.models.data.row_parser import HFDetectionRowParser
 from obj_det.models.data.sample_source import DetectionSampleSource
@@ -126,6 +126,16 @@ class BackendDataTest(unittest.TestCase):
         self.assertGreater(loader_stats["batches_per_second"], 0.0)
         self.assertEqual(decode_stats["images"], 2.0)
         self.assertGreater(decode_stats["images_per_second"], 0.0)
+
+    def test_transform_profiling_helper_returns_rate(self):
+        parser = HFDetectionRowParser(["car"], "meta")
+        transform = DetectionTransform(PreprocessConfig(image_size=64))
+        samples = [parser.parse(row()), parser.parse(row(image_id="img2"))]
+
+        stats = measure_transform(samples, transform, max_samples=2)
+
+        self.assertEqual(stats["samples"], 2.0)
+        self.assertGreater(stats["samples_per_second"], 0.0)
 
     def test_torchvision_dataset_and_collate_are_trainer_inputs(self):
         ds = Dataset.from_list([row(), row(image_id="img2")])
