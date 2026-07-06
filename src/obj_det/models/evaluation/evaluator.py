@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import io
+import logging
 from typing import Iterable
 
 from datasets import Dataset
@@ -17,6 +18,9 @@ from obj_det.models.schemas.prediction import PredictionRecord
 from obj_det.models.schemas.result import EvalResult
 
 
+logger = logging.getLogger(__name__)
+
+
 class DetectionEvaluator:
     def evaluate(
         self,
@@ -28,6 +32,9 @@ class DetectionEvaluator:
     ) -> EvalResult:
         parser = HFDetectionRowParser(classes=eval_cfg.classes, label_mode=eval_cfg.label_mode)
         samples = [parser.parse_targets_only(row) for row in ds]
+        stats = parser.stats_snapshot()
+        if stats:
+            logger.info("Evaluation object filtering stats: %s", stats)
         pred_list = list(predictions)
         metrics = self._evaluate_subset(samples, pred_list, eval_cfg.classes)
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 import json
 import logging
+from collections import Counter
 from typing import Any
 
 import cv2
@@ -27,29 +28,39 @@ class HFDetectionRowParser:
         if decode_backend not in {"pil", "opencv"}:
             raise ValueError(f"Unknown decode_backend: {decode_backend}")
         self.decode_backend = decode_backend
+        self.stats: Counter[str] = Counter()
 
     def parse(self, row: dict[str, Any], *, decode_image: bool = True) -> DetectionSample:
         image = self.decode_image(row["image"]) if decode_image else None
         targets: list[DetectionTarget] = []
 
         for obj in row.get("objects", []):
+            self.stats["total_objects"] += 1
             if obj.get("ignore", False):
+                self.stats["ignored_objects"] += 1
                 continue
 
             label = obj.get("native_label") if self.label_mode == "native" else obj.get("meta_label")
             if label is None or label == "":
+                if self.label_mode == "meta":
+                    self.stats["missing_meta_label"] += 1
+                else:
+                    self.stats["missing_native_label"] += 1
                 continue
 
             if label not in self.class_to_id:
+                self.stats["label_not_in_classes"] += 1
                 logger.debug("Skipping object with label outside class list: %s", label)
                 continue
 
             try:
                 bbox = bbox_xywh(obj["bbox"])
             except (KeyError, TypeError, ValueError) as exc:
+                self.stats["invalid_bbox"] += 1
                 logger.warning("Skipping object with invalid bbox: %s", exc)
                 continue
 
+            self.stats["kept_objects"] += 1
             targets.append(
                 DetectionTarget(
                     bbox_xywh=bbox,
@@ -76,6 +87,12 @@ class HFDetectionRowParser:
 
     def parse_targets_only(self, row: dict[str, Any]) -> DetectionSample:
         return self.parse(row, decode_image=False)
+
+    def stats_snapshot(self) -> dict[str, int]:
+        return dict(self.stats)
+
+    def reset_stats(self) -> None:
+        self.stats.clear()
 
     def decode_image(self, image_field: Any) -> np.ndarray:
         if isinstance(image_field, dict):

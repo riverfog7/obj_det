@@ -57,6 +57,15 @@ class RowParserTest(unittest.TestCase):
         ]))
 
         self.assertEqual(sample.targets, [])
+        self.assertEqual(
+            parser.stats_snapshot(),
+            {
+                "total_objects": 3,
+                "ignored_objects": 1,
+                "missing_meta_label": 1,
+                "label_not_in_classes": 1,
+            },
+        )
 
     def test_decode_path_pil_and_numpy(self):
         parser = HFDetectionRowParser(classes=["car"], label_mode="meta")
