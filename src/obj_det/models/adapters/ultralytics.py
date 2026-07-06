@@ -65,7 +65,7 @@ class UltralyticsDetectionAdapter(BaseModelAdapter):
 
         set_seed(train_cfg.seed)
         train_cfg.output_dir.mkdir(parents=True, exist_ok=True)
-        parser = HFDetectionRowParser(classes=train_cfg.classes, label_mode=train_cfg.label_mode)
+        parser = HFDetectionRowParser(classes=train_cfg.classes, label_mode=train_cfg.label_mode, decode_backend=train_cfg.loader.decode_backend)
         transform = build_detection_transform(train_cfg.preprocess, train_cfg.augmentation, seed=train_cfg.seed)
         train_source = DetectionSampleSource(train_ds, parser, predecode_images=train_cfg.loader.predecode_images)
         val_source = DetectionSampleSource(val_ds, parser, predecode_images=train_cfg.loader.predecode_images)
@@ -102,7 +102,11 @@ class UltralyticsDetectionAdapter(BaseModelAdapter):
         checkpoint = artifact.checkpoint_path or artifact.artifact_path or Path(str(self.cfg.model_name_or_path))
         model = YOLO(str(checkpoint))
         device = predict_cfg.backend_params.get("device")
-        parser = HFDetectionRowParser(classes=predict_cfg.classes, label_mode=predict_cfg.label_mode)
+        parser = HFDetectionRowParser(
+            classes=predict_cfg.classes,
+            label_mode=predict_cfg.label_mode,
+            decode_backend=predict_cfg.backend_params.get("decode_backend", "pil"),
+        )
         transform = build_detection_transform(predict_cfg.preprocess)
         rows = list(ds)
 
@@ -289,6 +293,7 @@ class UltralyticsDetectionAdapter(BaseModelAdapter):
                     source,
                     self._hf_transform,
                     include_samples=bool(getattr(self._hf_loader_cfg, "include_samples_in_batch", False)),
+                    profile_every_n=getattr(self._hf_loader_cfg, "profile_every_n", None),
                 )
                 return DataLoader(
                     dataset,

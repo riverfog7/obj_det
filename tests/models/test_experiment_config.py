@@ -58,7 +58,7 @@ class ExperimentConfigTest(unittest.TestCase):
         self.assertEqual(cfg.train.eval_strategy.every_epochs, 1)
         self.assertEqual(cfg.train.loader.num_workers, 2)
         self.assertTrue(cfg.train.loader.predecode_images)
-        self.assertEqual(cfg.train.logging_steps, 10)
+        self.assertEqual(cfg.train.logging_steps, 100)
 
     def test_relative_model_preprocess_augmentation_and_search_space_files_load(self):
         with TemporaryDirectory() as tmp:

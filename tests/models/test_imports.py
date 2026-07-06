@@ -45,6 +45,7 @@ class ImportTest(unittest.TestCase):
         self.assertFalse(eval_cfg.compute_per_class)
         self.assertFalse(EvalStrategyConfig().enabled)
         self.assertEqual(DataLoaderConfig(num_workers=2).num_workers, 2)
+        self.assertEqual(DataLoaderConfig(decode_backend="opencv", profile_every_n=10).decode_backend, "opencv")
         self.assertEqual(AugmentationConfig(policy="basic").policy, "basic")
         self.assertEqual(SearchSpace().params, {})
         self.assertEqual(TrainConfig(run_key="r", classes=["car"], output_dir="/tmp/x", preprocess=preprocess).label_mode, "meta")

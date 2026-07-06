@@ -239,19 +239,17 @@ model_cfg = ModelConfig(
     model_name_or_path="fasterrcnn_resnet50_fpn",
 )
 adapter = model_adapter_from_config(model_cfg)
-transform = TransformConfig(
-    image_size=640,
-    horizontal_flip_p=0.5,
-    color_jitter_strength=0.1,
-)
+preprocess = PreprocessConfig(image_size=640)
+augmentation = AugmentationConfig(policy="basic", horizontal_flip_p=0.5, color_jitter_strength=0.1)
 
 train_cfg = TrainConfig(
     run_key="fasterrcnn_hazydet_seed0",
     classes=["person", "bicycle", "motorcycle", "car", "bus", "truck"],
     label_mode="meta",
     output_dir="runs/fasterrcnn/hazydet/seed0",
-    transform=transform,
-    loader=DataLoaderConfig(num_workers=4, persistent_workers=True, prefetch_factor=2),
+    preprocess=preprocess,
+    augmentation=augmentation,
+    loader=DataLoaderConfig(num_workers=16, persistent_workers=True, prefetch_factor=4),
     max_epochs=50,
     batch_size=16,
 )
@@ -259,7 +257,7 @@ train_cfg = TrainConfig(
 eval_cfg = EvalConfig(
     classes=train_cfg.classes,
     label_mode=train_cfg.label_mode,
-    transform=transform,
+    preprocess=preprocess,
 )
 
 artifact = adapter.train(hf_ds["train"], hf_ds["validation"], train_cfg)
@@ -314,10 +312,12 @@ configs/experiments/
 ```
 
 Training configs can set `train.logging_steps` to control scalar training-log
-cadence for all backends. It means every N training steps/batches; use
-`logging_steps: 1` to log every batch. They can also set
-`train.loader.num_workers` for parallel loading and `train.loader.predecode_images:
-true` to decode the HF image bytes into RAM before training.
+cadence for all backends. It means every N training steps/batches; default
+experiment configs use `logging_steps: 100`. They can also set
+`train.loader.num_workers`, `prefetch_factor`, `decode_backend: pil|opencv`, and
+`profile_every_n` for data-path tuning. `predecode_images: true` is diagnostic
+and memory-heavy; use it to prove decode is the bottleneck, not as the default
+large-dataset training mode.
 
 Model runs support scalar-only logging for all CLI flows:
 

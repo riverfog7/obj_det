@@ -23,15 +23,15 @@ train:
   protocol: controlled
   max_epochs: 50
   batch_size: 8
-  logging_steps: 10
+  logging_steps: 100
   eval_strategy:
     enabled: false
     every_epochs: 1
   loader:
-    num_workers: 8
+    num_workers: 16
     pin_memory: true
     persistent_workers: true
-    prefetch_factor: 2
+    prefetch_factor: 4
     predecode_images: false
   seed: 0
   hparams:

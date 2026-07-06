@@ -71,6 +71,13 @@ class RowParserTest(unittest.TestCase):
         self.assertEqual(pil_image.shape, (2, 3, 3))
         self.assertEqual(np_image.shape, (2, 3, 3))
 
+    def test_decode_backend_opencv_decodes_bytes(self):
+        parser = HFDetectionRowParser(classes=["car"], label_mode="meta", decode_backend="opencv")
+        image = parser.decode_image({"bytes": image_bytes()})
+
+        self.assertEqual(image.shape, (24, 32, 3))
+        self.assertEqual(image.dtype, np.uint8)
+
 
 if __name__ == "__main__":
     unittest.main()

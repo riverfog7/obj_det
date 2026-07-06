@@ -66,7 +66,7 @@ class ModelConfigMatrixTest(unittest.TestCase):
                 self.assertEqual(cfg.train.run_key, f"{key}_hazydet_controlled")
                 self.assertEqual(cfg.tuning.study_name, f"{key}_hazydet_controlled")
                 self.assertEqual(str(cfg.train.output_dir), f"runs/{key}/hazydet/controlled")
-                self.assertEqual(cfg.train.logging_steps, 10)
+                self.assertEqual(cfg.train.logging_steps, 100)
                 self.assertEqual(str(cfg.tuning.output_dir), f"runs/hpo/{key}_hazydet_controlled")
                 self.assertEqual(cfg.logging.wandb.project, f"{key}_hazydet_controlled")
                 self.assertEqual(cfg.classes, ["person", "bicycle", "motorcycle", "car", "bus", "truck"])

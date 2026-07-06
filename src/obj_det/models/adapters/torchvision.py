@@ -49,7 +49,7 @@ class TorchvisionDetectionAdapter(BaseModelAdapter):
         train_cfg.output_dir.mkdir(parents=True, exist_ok=True)
 
         model = self._build_model(num_classes=len(train_cfg.classes) + 1, image_size=train_cfg.preprocess.image_size)
-        parser = HFDetectionRowParser(classes=train_cfg.classes, label_mode=train_cfg.label_mode)
+        parser = HFDetectionRowParser(classes=train_cfg.classes, label_mode=train_cfg.label_mode, decode_backend=train_cfg.loader.decode_backend)
         transform = build_detection_transform(train_cfg.preprocess, train_cfg.augmentation, seed=train_cfg.seed)
         train_source = DetectionSampleSource(train_ds, parser, predecode_images=train_cfg.loader.predecode_images)
         val_source = DetectionSampleSource(val_ds, parser, predecode_images=train_cfg.loader.predecode_images)
@@ -111,7 +111,11 @@ class TorchvisionDetectionAdapter(BaseModelAdapter):
         model.load_state_dict(checkpoint["model_state_dict"])
         model.eval()
 
-        parser = HFDetectionRowParser(classes=predict_cfg.classes, label_mode=predict_cfg.label_mode)
+        parser = HFDetectionRowParser(
+            classes=predict_cfg.classes,
+            label_mode=predict_cfg.label_mode,
+            decode_backend=predict_cfg.backend_params.get("decode_backend", "pil"),
+        )
         transform = build_detection_transform(predict_cfg.preprocess)
 
         with torch.no_grad():

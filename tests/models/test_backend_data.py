@@ -9,6 +9,7 @@ from obj_det.datasets.models import BBox
 from obj_det.models.adapters.torchvision import _TorchvisionTrainerDataset, _torchvision_collate
 from obj_det.models.data.hf_dataset import HFTrainerDetectionDataset
 from obj_det.models.data.loader import dataloader_kwargs
+from obj_det.models.data.profiling import measure_dataloader, measure_decode_backend
 from obj_det.models.data.hf_targets import make_hf_detection_collate, sample_to_coco_annotation
 from obj_det.models.data.row_parser import HFDetectionRowParser
 from obj_det.models.data.sample_source import DetectionSampleSource
@@ -110,6 +111,21 @@ class BackendDataTest(unittest.TestCase):
             dataloader_kwargs(DataLoaderConfig(num_workers=2, persistent_workers=True, prefetch_factor=2)),
             {"num_workers": 2, "pin_memory": True, "persistent_workers": True, "prefetch_factor": 2},
         )
+
+    def test_data_profiling_helpers_return_rates(self):
+        loader_stats = measure_dataloader([{"x": 1}, {"x": 2}], max_batches=2)
+        decode_stats = measure_decode_backend(
+            [row(), row(image_id="img2")],
+            classes=["car"],
+            label_mode="meta",
+            decode_backend="pil",
+            max_images=2,
+        )
+
+        self.assertEqual(loader_stats["batches"], 2.0)
+        self.assertGreater(loader_stats["batches_per_second"], 0.0)
+        self.assertEqual(decode_stats["images"], 2.0)
+        self.assertGreater(decode_stats["images_per_second"], 0.0)
 
     def test_torchvision_dataset_and_collate_are_trainer_inputs(self):
         ds = Dataset.from_list([row(), row(image_id="img2")])
