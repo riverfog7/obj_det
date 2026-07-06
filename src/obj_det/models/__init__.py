@@ -19,6 +19,7 @@ from .schemas import (
     TuningConfig,
     TuningResult,
 )
+from .runner import ExperimentRunner
 
 __all__ = [
     "AugmentationConfig",
@@ -28,6 +29,7 @@ __all__ = [
     "EvalConfig",
     "EvalResult",
     "ExperimentConfig",
+    "ExperimentRunner",
     "FinalConfig",
     "LoggingConfig",
     "ModelArtifact",

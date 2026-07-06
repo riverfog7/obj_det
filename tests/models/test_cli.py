@@ -9,8 +9,9 @@ from unittest.mock import patch
 from typer.testing import CliRunner
 
 from obj_det.models import ExperimentConfig
-from obj_det.models.cli import _child_logger_factory, _logger, app
+from obj_det.models.cli import app
 from obj_det.models.logging import CompositeLogger, LocalJsonLogger
+from obj_det.models.runner import ExperimentRunner
 from obj_det.models.schemas.artifact import ModelArtifact
 
 
@@ -58,7 +59,7 @@ class CliTest(unittest.TestCase):
         )
 
         with patch("obj_det.models.logging.factory.WandbLogger") as logger_cls:
-            logger = _logger(exp, default_log_path=Path("runs/r/logs/events.jsonl"), run_name="fallback")
+            logger = ExperimentRunner(exp)._logger(default_log_path=Path("runs/r/logs/events.jsonl"), run_name="fallback")
 
         self.assertIsInstance(logger, CompositeLogger)
         self.assertIsInstance(logger.loggers[0], LocalJsonLogger)
@@ -88,7 +89,7 @@ class CliTest(unittest.TestCase):
             }
         )
 
-        self.assertIsNone(_logger(exp, default_log_path=Path("runs/r/logs/events.jsonl"), run_name="r"))
+        self.assertIsNone(ExperimentRunner(exp)._logger(default_log_path=Path("runs/r/logs/events.jsonl"), run_name="r"))
 
     def test_child_logger_factory_uses_child_name_group_and_path(self):
         exp = ExperimentConfig.model_validate(
@@ -117,7 +118,7 @@ class CliTest(unittest.TestCase):
         )
 
         with patch("obj_det.models.logging.factory.WandbLogger") as logger_cls:
-            factory = _child_logger_factory(exp, wandb_group="child-group")
+            factory = ExperimentRunner(exp)._child_logger_factory(wandb_group="child-group")
             logger = factory("child-run", Path("runs/child/logs/events.jsonl"))
 
         self.assertIsInstance(logger, CompositeLogger)
@@ -164,8 +165,8 @@ class CliTest(unittest.TestCase):
             dataset = {"train": [object()], "validation": [object()]}
 
             with (
-                patch("obj_det.models.cli.load_from_disk", return_value=dataset),
-                patch("obj_det.models.adapters.factory.model_adapter_from_config", return_value=DummyAdapter()),
+                patch("obj_det.models.runner.load_from_disk", return_value=dataset),
+                patch("obj_det.models.runner.model_adapter_from_config", return_value=DummyAdapter()),
             ):
                 result = CliRunner().invoke(app, ["train", str(config)])
 

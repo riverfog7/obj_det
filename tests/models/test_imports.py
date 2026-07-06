@@ -8,6 +8,7 @@ from obj_det.models import (
     EvalConfig,
     EvalStrategyConfig,
     ExperimentConfig,
+    ExperimentRunner,
     ModelConfig,
     PreprocessConfig,
     SearchSpace,
@@ -23,6 +24,19 @@ class ImportTest(unittest.TestCase):
             backend="torchvision",
             model_name_or_path="fasterrcnn_resnet50_fpn",
         )
+        exp = ExperimentConfig.model_validate({
+            "dataset": {"path": "/tmp/ds"},
+            "classes": ["car"],
+            "preprocess": {"image_size": 32},
+            "model": {
+                "key": "m",
+                "backend": "torchvision",
+                "model_name_or_path": "fasterrcnn_resnet50_fpn",
+            },
+            "train": {"run_key": "r", "output_dir": "/tmp/r"},
+            "eval": {},
+        })
+        self.assertIs(ExperimentRunner(exp).exp, exp)
         adapter = model_adapter_from_config(cfg)
         preprocess = PreprocessConfig(image_size=32)
         self.assertEqual(adapter.key, "fasterrcnn")
