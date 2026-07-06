@@ -68,6 +68,18 @@ class EvaluatorTest(unittest.TestCase):
 
         self.assertEqual(result.primary_metric_value, 0.0)
 
+    def test_evaluation_keeps_empty_images(self):
+        ds = Dataset.from_list([row(objects=[])])
+        result = DetectionEvaluator().evaluate(
+            ds,
+            [],
+            EvalConfig(classes=["car"], label_mode="meta", preprocess=PreprocessConfig(image_size=32)),
+            model_key="dummy",
+        )
+
+        self.assertEqual(result.num_images, 1)
+        self.assertEqual(result.num_ground_truth_objects, 0)
+
     def test_evaluator_does_not_decode_images(self):
         ds = Dataset.from_list([row()])
         predictions = [
