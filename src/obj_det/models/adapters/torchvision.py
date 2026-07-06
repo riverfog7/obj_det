@@ -51,6 +51,7 @@ class TorchvisionDetectionAdapter(BaseModelAdapter):
         model = self._build_model(num_classes=len(train_cfg.classes) + 1, image_size=train_cfg.preprocess.image_size)
         parser = HFDetectionRowParser(classes=train_cfg.classes, label_mode=train_cfg.label_mode, decode_backend=train_cfg.loader.decode_backend)
         transform = build_detection_transform(train_cfg.preprocess, train_cfg.augmentation, seed=train_cfg.seed)
+        eval_transform = build_detection_transform(train_cfg.preprocess)
         train_source = DetectionSampleSource(train_ds, parser, predecode_images=train_cfg.loader.predecode_images)
         val_source = DetectionSampleSource(val_ds, parser, predecode_images=train_cfg.loader.predecode_images)
 
@@ -58,7 +59,7 @@ class TorchvisionDetectionAdapter(BaseModelAdapter):
             model=model,
             args=self._training_args(train_cfg),
             train_dataset=_TorchvisionTrainerDataset(train_source, transform),
-            eval_dataset=_TorchvisionTrainerDataset(val_source, transform),
+            eval_dataset=_TorchvisionTrainerDataset(val_source, eval_transform),
             data_collator=_torchvision_collate,
             train_cfg=train_cfg,
             callbacks=[make_transformers_logging_callback(TrainerCallback, logger, log_prefix)] if logger else None,

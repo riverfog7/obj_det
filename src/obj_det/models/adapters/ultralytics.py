@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import warnings
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Iterator
@@ -61,7 +62,11 @@ class UltralyticsDetectionAdapter(BaseModelAdapter):
             raise ImportError("Install the models extra to use backend='ultralytics'.") from exc
 
         if train_cfg.eval_strategy.enabled:
-            raise NotImplementedError("Ultralytics train-time eval_strategy is not implemented yet")
+            warnings.warn(
+                "Ultralytics train-time eval_strategy is ignored; final metrics come from adapter.evaluate().",
+                RuntimeWarning,
+                stacklevel=2,
+            )
 
         set_seed(train_cfg.seed)
         train_cfg.output_dir.mkdir(parents=True, exist_ok=True)
