@@ -1,4 +1,5 @@
 from .schemas import (
+    AugmentationConfig,
     DatasetRef,
     DataLoaderConfig,
     EvalStrategyConfig,
@@ -12,14 +13,15 @@ from .schemas import (
     PredictionObject,
     PredictionRecord,
     PredictConfig,
+    PreprocessConfig,
     SearchSpace,
     TrainConfig,
-    TransformConfig,
     TuningConfig,
     TuningResult,
 )
 
 __all__ = [
+    "AugmentationConfig",
     "DatasetRef",
     "DataLoaderConfig",
     "EvalStrategyConfig",
@@ -33,9 +35,9 @@ __all__ = [
     "PredictionObject",
     "PredictionRecord",
     "PredictConfig",
+    "PreprocessConfig",
     "SearchSpace",
     "TrainConfig",
-    "TransformConfig",
     "TuningConfig",
     "TuningResult",
 ]

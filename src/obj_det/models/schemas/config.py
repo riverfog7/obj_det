@@ -38,8 +38,12 @@ class ModelConfig(ModelSchema):
         return value
 
 
-class TransformConfig(ModelSchema):
+class PreprocessConfig(ModelSchema):
     image_size: int = Field(gt=0)
+
+
+class AugmentationConfig(ModelSchema):
+    policy: Literal["none", "basic", "weather", "provider"] = "none"
     horizontal_flip_p: float = Field(default=0.0, ge=0.0, le=1.0)
     color_jitter_strength: float = Field(default=0.0, ge=0.0)
 
@@ -63,7 +67,8 @@ class TrainConfig(ModelSchema):
     label_mode: LabelMode = "meta"
     output_dir: Path
     protocol: ProtocolName = "controlled"
-    transform: TransformConfig
+    preprocess: PreprocessConfig
+    augmentation: AugmentationConfig = Field(default_factory=AugmentationConfig)
     loader: DataLoaderConfig = Field(default_factory=DataLoaderConfig)
     eval_strategy: EvalStrategyConfig = Field(default_factory=EvalStrategyConfig)
     max_epochs: int | None = Field(default=50, gt=0)
@@ -93,7 +98,7 @@ class PredictConfig(ModelSchema):
     classes: list[str]
     label_mode: LabelMode = "meta"
     batch_size: int = Field(default=8, gt=0)
-    transform: TransformConfig
+    preprocess: PreprocessConfig
     conf_threshold: float = Field(default=0.001, ge=0.0, le=1.0)
     iou_threshold: float = Field(default=0.7, ge=0.0, le=1.0)
     backend_params: dict[str, Any] = Field(default_factory=dict)
@@ -108,7 +113,7 @@ class EvalConfig(ModelSchema):
     classes: list[str]
     label_mode: LabelMode = "meta"
     batch_size: int = Field(default=8, gt=0)
-    transform: TransformConfig
+    preprocess: PreprocessConfig
     conf_threshold: float = Field(default=0.001, ge=0.0, le=1.0)
     iou_threshold: float = Field(default=0.7, ge=0.0, le=1.0)
     compute_per_class: bool = True

@@ -1,5 +1,6 @@
 from .artifact import ModelArtifact
 from .config import (
+    AugmentationConfig,
     BackendName,
     DataLoaderConfig,
     EvalStrategyConfig,
@@ -7,9 +8,9 @@ from .config import (
     LabelMode,
     ModelConfig,
     PredictConfig,
+    PreprocessConfig,
     ProtocolName,
     TrainConfig,
-    TransformConfig,
 )
 from .experiment import DatasetRef, ExperimentConfig, FinalConfig
 from .logging import LoggingBackend, LoggingConfig, LocalLoggingConfig, WandbLoggingConfig, WandbMode
@@ -18,6 +19,7 @@ from .result import EvalResult
 from .tuning import BestTrial, SearchSpace, TrialResult, TuningConfig, TuningResult
 
 __all__ = [
+    "AugmentationConfig",
     "BackendName",
     "BestTrial",
     "DatasetRef",
@@ -36,10 +38,10 @@ __all__ = [
     "PredictionObject",
     "PredictionRecord",
     "PredictConfig",
+    "PreprocessConfig",
     "ProtocolName",
     "SearchSpace",
     "TrainConfig",
-    "TransformConfig",
     "TrialResult",
     "TuningConfig",
     "TuningResult",

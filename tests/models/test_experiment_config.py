@@ -21,8 +21,9 @@ class ExperimentConfigTest(unittest.TestCase):
                     "backend": "torchvision",
                     "model_name_or_path": "fasterrcnn_resnet50_fpn",
                 },
-                "transform": {
-                    "image_size": 320,
+                "preprocess": {"image_size": 320},
+                "augmentation": {
+                    "policy": "basic",
                     "horizontal_flip_p": 0.5,
                     "color_jitter_strength": 0.1,
                 },
@@ -51,19 +52,20 @@ class ExperimentConfigTest(unittest.TestCase):
         self.assertEqual(cfg.eval.classes, ["car", "person"])
         self.assertEqual(cfg.predict.classes, ["car", "person"])
         self.assertEqual(cfg.eval.label_mode, "meta")
-        self.assertEqual(cfg.predict.transform.image_size, 320)
-        self.assertEqual(cfg.train.transform.horizontal_flip_p, 0.5)
+        self.assertEqual(cfg.predict.preprocess.image_size, 320)
+        self.assertEqual(cfg.train.augmentation.horizontal_flip_p, 0.5)
         self.assertTrue(cfg.train.eval_strategy.enabled)
         self.assertEqual(cfg.train.eval_strategy.every_epochs, 1)
         self.assertEqual(cfg.train.loader.num_workers, 2)
         self.assertTrue(cfg.train.loader.predecode_images)
         self.assertEqual(cfg.train.logging_steps, 10)
 
-    def test_relative_model_transform_and_search_space_files_load(self):
+    def test_relative_model_preprocess_augmentation_and_search_space_files_load(self):
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
             (root / "models").mkdir()
-            (root / "transforms").mkdir()
+            (root / "preprocess").mkdir()
+            (root / "augmentations").mkdir()
             (root / "spaces").mkdir()
             (root / "experiments").mkdir()
             (root / "models" / "m.yaml").write_text(
@@ -76,12 +78,13 @@ class ExperimentConfigTest(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
-            (root / "transforms" / "t.yaml").write_text(
+            (root / "preprocess" / "p.yaml").write_text("image_size: 64\n", encoding="utf-8")
+            (root / "augmentations" / "a.yaml").write_text(
                 "\n".join(
                     [
-                        "image_size: 64",
-                        "horizontal_flip_p: 0.0",
-                        "color_jitter_strength: 0.0",
+                        "policy: basic",
+                        "horizontal_flip_p: 0.5",
+                        "color_jitter_strength: 0.1",
                     ]
                 ),
                 encoding="utf-8",
@@ -106,7 +109,8 @@ class ExperimentConfigTest(unittest.TestCase):
                         "  path: datasets/tiny",
                         "classes: [car]",
                         "model_file: ../models/m.yaml",
-                        "transform_file: ../transforms/t.yaml",
+                        "preprocess_file: ../preprocess/p.yaml",
+                        "augmentation_file: ../augmentations/a.yaml",
                         "train:",
                         "  run_key: r",
                         "  output_dir: runs/r",
@@ -123,7 +127,7 @@ class ExperimentConfigTest(unittest.TestCase):
             cfg = load_experiment_config(exp_path)
 
         self.assertEqual(cfg.model.key, "m")
-        self.assertEqual(cfg.train.transform.image_size, 64)
+        self.assertEqual(cfg.train.preprocess.image_size, 64)
         self.assertEqual(cfg.train.loader.num_workers, 3)
         self.assertTrue(cfg.train.loader.predecode_images)
         self.assertIn("learning_rate", cfg.search_space.params)
@@ -134,7 +138,7 @@ class ExperimentConfigTest(unittest.TestCase):
                 {
                     "dataset": {"path": "datasets/tiny"},
                     "classes": ["car"],
-                    "transform": {"image_size": 32},
+                    "preprocess": {"image_size": 32},
                     "model": {
                         "key": "m",
                         "backend": "torchvision",
@@ -154,7 +158,7 @@ class ExperimentConfigTest(unittest.TestCase):
                 {
                     "dataset": {"path": "datasets/tiny"},
                     "classes": ["car"],
-                    "transform": {"image_size": 32},
+                    "preprocess": {"image_size": 32},
                     "model": {
                         "key": "m",
                         "backend": "torchvision",
@@ -174,7 +178,7 @@ class ExperimentConfigTest(unittest.TestCase):
                 {
                     "dataset": {"path": "datasets/tiny"},
                     "classes": ["car"],
-                    "transform": {"image_size": 32},
+                    "preprocess": {"image_size": 32},
                     "model": {
                         "key": "m",
                         "backend": "torchvision",
@@ -204,7 +208,7 @@ class ExperimentConfigTest(unittest.TestCase):
                     {
                         "dataset": {"path": "datasets/tiny"},
                         "classes": ["car"],
-                        "transform": {"image_size": 32},
+                        "preprocess": {"image_size": 32},
                         "model": {
                             "key": "m",
                             "backend": "torchvision",
@@ -224,7 +228,7 @@ class ExperimentConfigTest(unittest.TestCase):
             {
                 "dataset": {"path": "datasets/tiny"},
                 "classes": ["car"],
-                "transform": {"image_size": 32},
+                "preprocess": {"image_size": 32},
                 "model": {
                     "key": "m",
                     "backend": "torchvision",
@@ -252,11 +256,11 @@ class ExperimentConfigTest(unittest.TestCase):
         self.assertEqual(cfg.logging.wandb.mode, "offline")
         self.assertEqual(cfg.logging.wandb.tags, ["unit"])
 
-    def test_rejects_duplicate_model_transform_or_search_space_source(self):
+    def test_rejects_duplicate_model_preprocess_augmentation_or_search_space_source(self):
         base = {
             "dataset": {"path": "datasets/tiny"},
             "classes": ["car"],
-            "transform": {"image_size": 32},
+            "preprocess": {"image_size": 32},
             "train": {"run_key": "r", "output_dir": "runs/r"},
             "eval": {},
         }
@@ -282,7 +286,7 @@ class ExperimentConfigTest(unittest.TestCase):
                         "backend": "torchvision",
                         "model_name_or_path": "fasterrcnn_resnet50_fpn",
                     },
-                    "transform_file": "t.yaml",
+                    "preprocess_file": "p.yaml",
                 }
             )
 

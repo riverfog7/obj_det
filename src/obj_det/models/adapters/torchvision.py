@@ -49,7 +49,7 @@ class TorchvisionDetectionAdapter(BaseModelAdapter):
 
         model = self._build_model(num_classes=len(train_cfg.classes) + 1)
         parser = HFDetectionRowParser(classes=train_cfg.classes, label_mode=train_cfg.label_mode)
-        transform = build_detection_transform(train_cfg.transform, seed=train_cfg.seed)
+        transform = build_detection_transform(train_cfg.preprocess, train_cfg.augmentation, seed=train_cfg.seed)
         train_source = DetectionSampleSource(train_ds, parser, predecode_images=train_cfg.loader.predecode_images)
         val_source = DetectionSampleSource(val_ds, parser, predecode_images=train_cfg.loader.predecode_images)
 
@@ -111,7 +111,7 @@ class TorchvisionDetectionAdapter(BaseModelAdapter):
         model.eval()
 
         parser = HFDetectionRowParser(classes=predict_cfg.classes, label_mode=predict_cfg.label_mode)
-        transform = build_detection_transform(predict_cfg.transform)
+        transform = build_detection_transform(predict_cfg.preprocess)
 
         with torch.no_grad():
             for row in ds:

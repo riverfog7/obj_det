@@ -5,7 +5,8 @@ dataset:
   test_split: test
 
 model_file: ../models/dfine_nano.yaml
-transform_file: ../transforms/basic_640.yaml
+preprocess_file: ../preprocess/640.yaml
+augmentation_file: ../augmentations/basic.yaml
 
 classes:
   - person

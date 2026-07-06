@@ -11,7 +11,7 @@ from datasets import Dataset
 
 from obj_det.models.adapters.base import BaseModelAdapter
 from obj_det.models.logging.factory import child_logger_factory_from_config
-from obj_det.models.schemas import EvalConfig, ModelConfig, SearchSpace, TrainConfig, TransformConfig, TuningConfig
+from obj_det.models.schemas import EvalConfig, ModelConfig, PreprocessConfig, SearchSpace, TrainConfig, TuningConfig
 from obj_det.models.schemas.artifact import ModelArtifact
 from obj_det.models.schemas.config import PredictConfig
 from obj_det.models.schemas.logging import LoggingConfig
@@ -199,13 +199,13 @@ class TuningTest(unittest.TestCase):
         ds = Dataset.from_list([row()])
         adapter = DummyAdapter()
         with TemporaryDirectory() as tmp:
-            transform = TransformConfig(image_size=32)
+            preprocess = PreprocessConfig(image_size=32)
             result = TuningRunner().optimize(
                 adapter=adapter,
                 train_ds=ds,
                 val_ds=ds,
-                base_train_cfg=TrainConfig(run_key="r", classes=["car"], output_dir=Path(tmp) / "base", transform=transform),
-                eval_cfg=EvalConfig(classes=["car"], transform=transform),
+                base_train_cfg=TrainConfig(run_key="r", classes=["car"], output_dir=Path(tmp) / "base", preprocess=preprocess),
+                eval_cfg=EvalConfig(classes=["car"], preprocess=preprocess),
                 search_space=SearchSpace(params={
                     "score": {"type": "float", "low": 0.0, "high": 1.0},
                     "fail": {"type": "categorical", "choices": [True, False]},
@@ -227,13 +227,13 @@ class TuningTest(unittest.TestCase):
         adapter = DummyAdapter()
         logger_factory = RecordingLoggerFactory()
         with TemporaryDirectory() as tmp:
-            transform = TransformConfig(image_size=32)
+            preprocess = PreprocessConfig(image_size=32)
             TuningRunner(logger_factory=logger_factory).optimize(
                 adapter=adapter,
                 train_ds=ds,
                 val_ds=ds,
-                base_train_cfg=TrainConfig(run_key="r", classes=["car"], output_dir=Path(tmp) / "base", transform=transform),
-                eval_cfg=EvalConfig(classes=["car"], transform=transform),
+                base_train_cfg=TrainConfig(run_key="r", classes=["car"], output_dir=Path(tmp) / "base", preprocess=preprocess),
+                eval_cfg=EvalConfig(classes=["car"], preprocess=preprocess),
                 search_space=SearchSpace(params={
                     "score": {"type": "float", "low": 0.0, "high": 1.0},
                     "fail": {"type": "categorical", "choices": [True, False]},
@@ -264,13 +264,13 @@ class TuningTest(unittest.TestCase):
         adapter = DummyAdapter()
         logger_factory = RecordingLoggerFactory()
         with TemporaryDirectory() as tmp:
-            transform = TransformConfig(image_size=32)
+            preprocess = PreprocessConfig(image_size=32)
             TuningRunner(logger_factory=logger_factory).optimize(
                 adapter=adapter,
                 train_ds=ds,
                 val_ds=ds,
-                base_train_cfg=TrainConfig(run_key="r", classes=["car"], output_dir=Path(tmp) / "base", transform=transform),
-                eval_cfg=EvalConfig(classes=["car"], transform=transform),
+                base_train_cfg=TrainConfig(run_key="r", classes=["car"], output_dir=Path(tmp) / "base", preprocess=preprocess),
+                eval_cfg=EvalConfig(classes=["car"], preprocess=preprocess),
                 search_space=SearchSpace(params={
                     "score": {"type": "float", "low": 0.0, "high": 1.0},
                     "fail": {"type": "categorical", "choices": [True, False]},
@@ -291,14 +291,14 @@ class TuningTest(unittest.TestCase):
         adapter = DummyAdapter()
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
-            transform = TransformConfig(image_size=32)
+            preprocess = PreprocessConfig(image_size=32)
             factory = child_logger_factory_from_config(LoggingConfig(backends=["local"]), wandb_group="s")
             TuningRunner(logger_factory=factory).optimize(
                 adapter=adapter,
                 train_ds=ds,
                 val_ds=ds,
-                base_train_cfg=TrainConfig(run_key="r", classes=["car"], output_dir=root / "base", transform=transform),
-                eval_cfg=EvalConfig(classes=["car"], transform=transform),
+                base_train_cfg=TrainConfig(run_key="r", classes=["car"], output_dir=root / "base", preprocess=preprocess),
+                eval_cfg=EvalConfig(classes=["car"], preprocess=preprocess),
                 search_space=SearchSpace(params={
                     "score": {"type": "float", "low": 0.0, "high": 1.0},
                     "fail": {"type": "categorical", "choices": [True, False]},
@@ -318,14 +318,14 @@ class TuningTest(unittest.TestCase):
         ds = Dataset.from_list([row()])
         adapter = DummyAdapter()
         with TemporaryDirectory() as tmp:
-            transform = TransformConfig(image_size=32)
+            preprocess = PreprocessConfig(image_size=32)
             runs = run_final_seeds(
                 adapter=adapter,
                 train_ds=ds,
                 val_ds=ds,
                 test_ds=ds,
-                base_train_cfg=TrainConfig(run_key="final", classes=["car"], output_dir=Path(tmp), transform=transform),
-                eval_cfg=EvalConfig(classes=["car"], transform=transform),
+                base_train_cfg=TrainConfig(run_key="final", classes=["car"], output_dir=Path(tmp), preprocess=preprocess),
+                eval_cfg=EvalConfig(classes=["car"], preprocess=preprocess),
                 hparams={"score": 0.4},
                 seeds=[0, 1, 2],
             )
@@ -340,14 +340,14 @@ class TuningTest(unittest.TestCase):
         logger_factory = RecordingLoggerFactory()
         with TemporaryDirectory() as tmp:
             output_dir = Path(tmp) / "final"
-            transform = TransformConfig(image_size=32)
+            preprocess = PreprocessConfig(image_size=32)
             run_final_seeds(
                 adapter=adapter,
                 train_ds=ds,
                 val_ds=ds,
                 test_ds=ds,
-                base_train_cfg=TrainConfig(run_key="final", classes=["car"], output_dir=Path(tmp), transform=transform),
-                eval_cfg=EvalConfig(classes=["car"], transform=transform),
+                base_train_cfg=TrainConfig(run_key="final", classes=["car"], output_dir=Path(tmp), preprocess=preprocess),
+                eval_cfg=EvalConfig(classes=["car"], preprocess=preprocess),
                 hparams={"score": 0.4},
                 seeds=[0, 1],
                 output_dir=output_dir,

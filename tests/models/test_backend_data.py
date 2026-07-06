@@ -12,7 +12,7 @@ from obj_det.models.data.row_parser import HFDetectionRowParser
 from obj_det.models.data.sample_source import DetectionSampleSource
 from obj_det.models.data.transforms import DetectionTransform
 from obj_det.models.data.ultralytics_dataset import HFUltralyticsDetectionDataset, ultralytics_detection_collate
-from obj_det.models.schemas import DataLoaderConfig, TransformConfig
+from obj_det.models.schemas import DataLoaderConfig, PreprocessConfig
 
 from .helpers import row
 
@@ -30,7 +30,7 @@ class BackendDataTest(unittest.TestCase):
         ds = Dataset.from_list([row(), row(image_id="img2")])
         parser = HFDetectionRowParser(["car"], "meta")
         source = DetectionSampleSource(ds, parser)
-        transform = DetectionTransform(TransformConfig(image_size=64))
+        transform = DetectionTransform(PreprocessConfig(image_size=64))
         dataset = HFUltralyticsDetectionDataset(source, transform)
         item = dataset[0]
         batch = ultralytics_detection_collate([dataset[0], dataset[1]])
@@ -65,7 +65,7 @@ class BackendDataTest(unittest.TestCase):
         ds = Dataset.from_list([row(), row(image_id="img2")])
         parser = HFDetectionRowParser(["car"], "meta")
         source = DetectionSampleSource(ds, parser)
-        transform = DetectionTransform(TransformConfig(image_size=64))
+        transform = DetectionTransform(PreprocessConfig(image_size=64))
         dataset = _TorchvisionTrainerDataset(source, transform)
         item = dataset[0]
         batch = _torchvision_collate([dataset[0], dataset[1]])

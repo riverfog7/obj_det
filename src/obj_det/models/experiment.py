@@ -4,7 +4,7 @@ from pathlib import Path
 import yaml
 
 from obj_det.models.schemas.artifact import ModelArtifact
-from obj_det.models.schemas.config import ModelConfig, TransformConfig
+from obj_det.models.schemas.config import AugmentationConfig, ModelConfig, PreprocessConfig
 from obj_det.models.schemas.experiment import ExperimentConfig
 from obj_det.models.schemas.result import EvalResult
 from obj_det.models.schemas.tuning import BestTrial, SearchSpace, TuningResult
@@ -14,12 +14,19 @@ def load_experiment_config(path: Path) -> ExperimentConfig:
     path = Path(path)
     data = _read_yaml_mapping(path)
 
-    if data.get("transform_file") is not None:
-        if data.get("transform") is not None:
-            raise ValueError("Use either transform or transform_file, not both")
-        transform_path = _resolve(path.parent, Path(data["transform_file"]))
-        data["transform"] = _read_yaml_mapping(transform_path)
-        data.pop("transform_file")
+    if data.get("preprocess_file") is not None:
+        if data.get("preprocess") is not None:
+            raise ValueError("Use either preprocess or preprocess_file, not both")
+        preprocess_path = _resolve(path.parent, Path(data["preprocess_file"]))
+        data["preprocess"] = _read_yaml_mapping(preprocess_path)
+        data.pop("preprocess_file")
+
+    if data.get("augmentation_file") is not None:
+        if data.get("augmentation") is not None:
+            raise ValueError("Use either augmentation or augmentation_file, not both")
+        augmentation_path = _resolve(path.parent, Path(data["augmentation_file"]))
+        data["augmentation"] = _read_yaml_mapping(augmentation_path)
+        data.pop("augmentation_file")
 
     cfg = ExperimentConfig.model_validate(data)
 
@@ -38,8 +45,12 @@ def load_model_config(path: Path) -> ModelConfig:
     return ModelConfig.model_validate(_read_yaml_mapping(Path(path)))
 
 
-def load_transform_config(path: Path) -> TransformConfig:
-    return TransformConfig.model_validate(_read_yaml_mapping(Path(path)))
+def load_preprocess_config(path: Path) -> PreprocessConfig:
+    return PreprocessConfig.model_validate(_read_yaml_mapping(Path(path)))
+
+
+def load_augmentation_config(path: Path) -> AugmentationConfig:
+    return AugmentationConfig.model_validate(_read_yaml_mapping(Path(path)))
 
 
 def load_search_space(path: Path) -> SearchSpace:

@@ -6,7 +6,15 @@ from typing import Any
 from pydantic import Field, field_validator, model_validator
 
 from .base import ModelSchema
-from .config import EvalConfig, ModelConfig, PredictConfig, TrainConfig, TransformConfig, validate_class_list
+from .config import (
+    AugmentationConfig,
+    EvalConfig,
+    ModelConfig,
+    PredictConfig,
+    PreprocessConfig,
+    TrainConfig,
+    validate_class_list,
+)
 from .logging import LoggingConfig
 from .tuning import SearchSpace, TuningConfig
 
@@ -39,8 +47,10 @@ class ExperimentConfig(ModelSchema):
 
     model: ModelConfig | None = None
     model_file: Path | None = None
-    transform: TransformConfig | None = None
-    transform_file: Path | None = None
+    preprocess: PreprocessConfig | None = None
+    preprocess_file: Path | None = None
+    augmentation: AugmentationConfig | None = None
+    augmentation_file: Path | None = None
 
     train: TrainConfig
     eval: EvalConfig
@@ -60,8 +70,9 @@ class ExperimentConfig(ModelSchema):
             return data
 
         classes = data.get("classes")
-        transform = data.get("transform")
-        if classes is None and transform is None:
+        preprocess = data.get("preprocess")
+        augmentation = data.get("augmentation")
+        if classes is None and preprocess is None and augmentation is None:
             return data
 
         data = dict(data)
@@ -76,11 +87,14 @@ class ExperimentConfig(ModelSchema):
             if predict is not None:
                 predict.setdefault("classes", classes)
 
-        if transform is not None:
-            train.setdefault("transform", transform)
-            eval_cfg.setdefault("transform", transform)
+        if preprocess is not None:
+            train.setdefault("preprocess", preprocess)
+            eval_cfg.setdefault("preprocess", preprocess)
             if predict is not None:
-                predict.setdefault("transform", transform)
+                predict.setdefault("preprocess", preprocess)
+
+        if augmentation is not None:
+            train.setdefault("augmentation", augmentation)
 
         if "label_mode" in train:
             eval_cfg.setdefault("label_mode", train["label_mode"])
@@ -105,8 +119,10 @@ class ExperimentConfig(ModelSchema):
             raise ValueError("Use either model or model_file, not both")
         if self.model is None and self.model_file is None:
             raise ValueError("Either model or model_file is required")
-        if self.transform is not None and self.transform_file is not None:
-            raise ValueError("Use either transform or transform_file, not both")
+        if self.preprocess is not None and self.preprocess_file is not None:
+            raise ValueError("Use either preprocess or preprocess_file, not both")
+        if self.augmentation is not None and self.augmentation_file is not None:
+            raise ValueError("Use either augmentation or augmentation_file, not both")
         if self.search_space is not None and self.search_space_file is not None:
             raise ValueError("Use either search_space or search_space_file, not both")
         return self

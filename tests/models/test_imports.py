@@ -3,14 +3,15 @@ from __future__ import annotations
 import unittest
 
 from obj_det.models import (
+    AugmentationConfig,
     DataLoaderConfig,
     EvalConfig,
     EvalStrategyConfig,
     ExperimentConfig,
     ModelConfig,
+    PreprocessConfig,
     SearchSpace,
     TrainConfig,
-    TransformConfig,
 )
 from obj_det.models.adapters.factory import model_adapter_from_config
 
@@ -23,18 +24,19 @@ class ImportTest(unittest.TestCase):
             model_name_or_path="fasterrcnn_resnet50_fpn",
         )
         adapter = model_adapter_from_config(cfg)
-        transform = TransformConfig(image_size=32)
+        preprocess = PreprocessConfig(image_size=32)
         self.assertEqual(adapter.key, "fasterrcnn")
-        self.assertEqual(EvalConfig(classes=["car"], transform=transform).classes, ["car"])
+        self.assertEqual(EvalConfig(classes=["car"], preprocess=preprocess).classes, ["car"])
         self.assertFalse(EvalStrategyConfig().enabled)
         self.assertEqual(DataLoaderConfig(num_workers=2).num_workers, 2)
+        self.assertEqual(AugmentationConfig(policy="basic").policy, "basic")
         self.assertEqual(SearchSpace().params, {})
-        self.assertEqual(TrainConfig(run_key="r", classes=["car"], output_dir="/tmp/x", transform=transform).label_mode, "meta")
+        self.assertEqual(TrainConfig(run_key="r", classes=["car"], output_dir="/tmp/x", preprocess=preprocess).label_mode, "meta")
         self.assertEqual(
             ExperimentConfig.model_validate({
                 "dataset": {"path": "/tmp/ds"},
                 "classes": ["car"],
-                "transform": {"image_size": 32},
+                "preprocess": {"image_size": 32},
                 "model": {
                     "key": "m",
                     "backend": "torchvision",

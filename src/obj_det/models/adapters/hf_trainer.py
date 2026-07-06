@@ -57,7 +57,7 @@ class HFTrainerDetectionAdapter(BaseModelAdapter):
         )
 
         parser = HFDetectionRowParser(classes=train_cfg.classes, label_mode=train_cfg.label_mode)
-        transform = build_detection_transform(train_cfg.transform, seed=train_cfg.seed)
+        transform = build_detection_transform(train_cfg.preprocess, train_cfg.augmentation, seed=train_cfg.seed)
         processor_kwargs = train_cfg.backend_params.get("processor_kwargs", {"do_resize": False})
         train_source = DetectionSampleSource(train_ds, parser, predecode_images=train_cfg.loader.predecode_images)
         val_source = DetectionSampleSource(val_ds, parser, predecode_images=train_cfg.loader.predecode_images)
@@ -120,7 +120,7 @@ class HFTrainerDetectionAdapter(BaseModelAdapter):
         model.eval()
 
         parser = HFDetectionRowParser(classes=predict_cfg.classes, label_mode=predict_cfg.label_mode)
-        transform = build_detection_transform(predict_cfg.transform)
+        transform = build_detection_transform(predict_cfg.preprocess)
         processor_kwargs = predict_cfg.backend_params.get("processor_kwargs", {"do_resize": False})
         rows = list(ds)
 

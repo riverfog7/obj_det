@@ -6,7 +6,7 @@ from datasets import Dataset
 
 from obj_det.datasets.models import BBox
 from obj_det.models.evaluation import DetectionEvaluator
-from obj_det.models.schemas.config import EvalConfig, TransformConfig
+from obj_det.models.schemas.config import EvalConfig, PreprocessConfig
 from obj_det.models.schemas.prediction import PredictionObject, PredictionRecord
 
 from .helpers import row
@@ -29,7 +29,7 @@ class EvaluatorTest(unittest.TestCase):
         result = DetectionEvaluator().evaluate(
             ds,
             predictions,
-            EvalConfig(classes=["car"], label_mode="meta", transform=TransformConfig(image_size=32)),
+            EvalConfig(classes=["car"], label_mode="meta", preprocess=PreprocessConfig(image_size=32)),
             model_key="dummy",
         )
 
@@ -54,7 +54,7 @@ class EvaluatorTest(unittest.TestCase):
         result = DetectionEvaluator().evaluate(
             ds,
             predictions,
-            EvalConfig(classes=["car"], label_mode="meta", transform=TransformConfig(image_size=32)),
+            EvalConfig(classes=["car"], label_mode="meta", preprocess=PreprocessConfig(image_size=32)),
             model_key="dummy",
         )
 

@@ -35,7 +35,7 @@ class CliTest(unittest.TestCase):
             {
                 "dataset": {"path": "datasets/tiny"},
                 "classes": ["car"],
-                "transform": {"image_size": 32},
+                "preprocess": {"image_size": 32},
                 "model": {
                     "key": "m",
                     "backend": "torchvision",
@@ -77,7 +77,7 @@ class CliTest(unittest.TestCase):
             {
                 "dataset": {"path": "datasets/tiny"},
                 "classes": ["car"],
-                "transform": {"image_size": 32},
+                "preprocess": {"image_size": 32},
                 "model": {
                     "key": "m",
                     "backend": "torchvision",
@@ -95,7 +95,7 @@ class CliTest(unittest.TestCase):
             {
                 "dataset": {"path": "datasets/tiny"},
                 "classes": ["car"],
-                "transform": {"image_size": 32},
+                "preprocess": {"image_size": 32},
                 "model": {
                     "key": "m",
                     "backend": "torchvision",
@@ -143,7 +143,7 @@ class CliTest(unittest.TestCase):
                         "dataset:",
                         "  path: datasets/tiny",
                         "classes: [car]",
-                        "transform:",
+                        "preprocess:",
                         "  image_size: 32",
                         "model:",
                         "  key: m",

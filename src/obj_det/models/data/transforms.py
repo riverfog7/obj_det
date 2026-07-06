@@ -9,14 +9,21 @@ import numpy as np
 
 from obj_det.datasets.models import BBox
 from obj_det.models.data.sample import DetectionSample, DetectionTarget
-from obj_det.models.schemas.config import TransformConfig
+from obj_det.models.schemas.config import AugmentationConfig, PreprocessConfig
 
 
 class DetectionTransform:
-    def __init__(self, cfg: TransformConfig, *, seed: int | None = None):
-        self.cfg = cfg
+    def __init__(
+        self,
+        preprocess: PreprocessConfig,
+        augmentation: AugmentationConfig | None = None,
+        *,
+        seed: int | None = None,
+    ):
+        self.preprocess = preprocess
+        self.augmentation = augmentation or AugmentationConfig()
         self.transform = A.Compose(
-            self._transforms(cfg),
+            self._transforms(preprocess, self.augmentation),
             bbox_params=A.BboxParams(
                 format="coco",
                 label_fields=["target_indices"],
@@ -52,31 +59,31 @@ class DetectionTransform:
             targets.append(replace(sample.targets[int(round(float(target_index)))], bbox=bbox))
 
         meta = dict(sample.meta)
-        meta["preprocess"] = _preprocess_meta(original_width, original_height, self.cfg.image_size)
+        meta["preprocess"] = _preprocess_meta(original_width, original_height, self.preprocess.image_size)
 
         return replace(sample, image=image, width=width, height=height, targets=targets, meta=meta)
 
-    def _transforms(self, cfg: TransformConfig) -> list[Any]:
+    def _transforms(self, preprocess: PreprocessConfig, augmentation: AugmentationConfig) -> list[Any]:
         transforms: list[Any] = []
-        if cfg.horizontal_flip_p > 0:
-            transforms.append(A.HorizontalFlip(p=cfg.horizontal_flip_p))
-        if cfg.color_jitter_strength > 0:
-            hue = min(0.5, cfg.color_jitter_strength * 0.5)
+        if augmentation.policy in {"basic", "weather"} and augmentation.horizontal_flip_p > 0:
+            transforms.append(A.HorizontalFlip(p=augmentation.horizontal_flip_p))
+        if augmentation.policy in {"basic", "weather"} and augmentation.color_jitter_strength > 0:
+            hue = min(0.5, augmentation.color_jitter_strength * 0.5)
             transforms.append(
                 A.ColorJitter(
-                    brightness=cfg.color_jitter_strength,
-                    contrast=cfg.color_jitter_strength,
-                    saturation=cfg.color_jitter_strength,
+                    brightness=augmentation.color_jitter_strength,
+                    contrast=augmentation.color_jitter_strength,
+                    saturation=augmentation.color_jitter_strength,
                     hue=hue,
                     p=1.0,
                 )
             )
         transforms.extend(
             [
-                A.LongestMaxSize(max_size=cfg.image_size, interpolation=cv2.INTER_LINEAR, p=1.0),
+                A.LongestMaxSize(max_size=preprocess.image_size, interpolation=cv2.INTER_LINEAR, p=1.0),
                 A.PadIfNeeded(
-                    min_height=cfg.image_size,
-                    min_width=cfg.image_size,
+                    min_height=preprocess.image_size,
+                    min_width=preprocess.image_size,
                     position="center",
                     border_mode=cv2.BORDER_CONSTANT,
                     fill=(0, 0, 0),
@@ -87,8 +94,13 @@ class DetectionTransform:
         return transforms
 
 
-def build_detection_transform(cfg: TransformConfig, *, seed: int | None = None) -> DetectionTransform:
-    return DetectionTransform(cfg, seed=seed)
+def build_detection_transform(
+    preprocess: PreprocessConfig,
+    augmentation: AugmentationConfig | None = None,
+    *,
+    seed: int | None = None,
+) -> DetectionTransform:
+    return DetectionTransform(preprocess, augmentation, seed=seed)
 
 
 def _preprocess_meta(original_width: int, original_height: int, image_size: int) -> dict[str, Any]:

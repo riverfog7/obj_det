@@ -56,7 +56,7 @@ class BaseModelAdapter(ABC):
             classes=eval_cfg.classes,
             label_mode=eval_cfg.label_mode,
             batch_size=eval_cfg.batch_size,
-            transform=eval_cfg.transform,
+            preprocess=eval_cfg.preprocess,
             conf_threshold=eval_cfg.conf_threshold,
             iou_threshold=eval_cfg.iou_threshold,
             backend_params=eval_cfg.backend_params,
