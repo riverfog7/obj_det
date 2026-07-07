@@ -53,6 +53,21 @@ class BackendDataTest(unittest.TestCase):
         self.assertNotIn("sample", item)
         self.assertNotIn("samples", batch)
 
+    def test_ultralytics_mixed_empty_and_non_empty_batch(self):
+        ds = Dataset.from_list([row(objects=[]), row(image_id="img2")])
+        parser = HFDetectionRowParser(["car"], "meta")
+        source = DetectionSampleSource(ds, parser)
+        transform = DetectionTransform(PreprocessConfig(image_size=64))
+        dataset = HFUltralyticsDetectionDataset(source, transform)
+        empty_item = dataset[0]
+        batch = ultralytics_detection_collate([empty_item, dataset[1]])
+
+        self.assertEqual(tuple(empty_item["cls"].shape), (0, 1))
+        self.assertEqual(tuple(empty_item["bboxes"].shape), (0, 4))
+        self.assertEqual(tuple(batch["cls"].shape), (1, 1))
+        self.assertEqual(tuple(batch["bboxes"].shape), (1, 4))
+        self.assertEqual(batch["batch_idx"].tolist(), [1.0])
+
     def test_ultralytics_dataset_can_include_samples_for_debug(self):
         ds = Dataset.from_list([row(), row(image_id="img2")])
         parser = HFDetectionRowParser(["car"], "meta")

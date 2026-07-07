@@ -43,7 +43,7 @@ class HFUltralyticsDetectionDataset(TorchDataset):
         if sample.image is None:
             raise ValueError("Ultralytics dataset requires decoded image data")
         image = torch.from_numpy(np.ascontiguousarray(sample.image)).permute(2, 0, 1).contiguous()
-        cls = torch.tensor([[target.label_id] for target in sample.targets], dtype=torch.float32)
+        cls = torch.tensor([[target.label_id] for target in sample.targets], dtype=torch.float32).reshape(-1, 1)
         bboxes = torch.tensor(
             [yolo_xywhn(target.bbox_xywh, sample.width, sample.height) for target in sample.targets],
             dtype=torch.float32,
