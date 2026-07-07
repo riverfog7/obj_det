@@ -122,21 +122,25 @@ def _preprocess_meta(original_width: int, original_height: int, image_size: int)
         "pad_left": pad_left,
         "pad_top": pad_top,
         "scale": scale,
+        "scale_x": resized_width / original_width,
+        "scale_y": resized_height / original_height,
     }
 
 
 def bbox_to_original(bbox: BBox, preprocess: dict[str, Any]) -> BBox | None:
     scale = float(preprocess["scale"])
+    scale_x = float(preprocess.get("scale_x", scale))
+    scale_y = float(preprocess.get("scale_y", scale))
     pad_left = float(preprocess["pad_left"])
     pad_top = float(preprocess["pad_top"])
     original_width = int(preprocess["original_width"])
     original_height = int(preprocess["original_height"])
 
     x1, y1, x2, y2 = bbox.xyxy()
-    x1 = (x1 - pad_left) / scale
-    y1 = (y1 - pad_top) / scale
-    x2 = (x2 - pad_left) / scale
-    y2 = (y2 - pad_top) / scale
+    x1 = (x1 - pad_left) / scale_x
+    y1 = (y1 - pad_top) / scale_y
+    x2 = (x2 - pad_left) / scale_x
+    y2 = (y2 - pad_top) / scale_y
 
     x1 = max(0.0, min(x1, float(original_width)))
     y1 = max(0.0, min(y1, float(original_height)))

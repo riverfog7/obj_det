@@ -55,6 +55,52 @@ class TransformTest(unittest.TestCase):
         self.assertAlmostEqual(restored.w, 8.0, places=6)
         self.assertAlmostEqual(restored.h, 10.0, places=6)
 
+
+    def test_resize_pad_inverse_mapping_across_aspect_ratios(self):
+        cases = [
+            (480, 960),
+            (1920, 1080),
+            (640, 640),
+            (17, 31),
+            (31, 17),
+            (853, 481),
+        ]
+
+        for width, height in cases:
+            with self.subTest(size=(width, height)):
+                bbox = [
+                    width * 0.2,
+                    height * 0.25,
+                    width * 0.3,
+                    height * 0.2,
+                ]
+                sample = HFDetectionRowParser(["car"], "meta").parse(
+                    row(
+                        size=(width, height),
+                        objects=[
+                            {
+                                "bbox": bbox,
+                                "native_label": "car",
+                                "native_label_id": "1",
+                                "meta_label": "car",
+                                "ignore": False,
+                                "iscrowd": False,
+                                "meta_json": "{}",
+                            }
+                        ],
+                    )
+                )
+                transformed = build_detection_transform(PreprocessConfig(image_size=640))(sample)
+                restored = bbox_to_original(
+                    BBox.from_xywh(transformed.targets[0].bbox_xywh),
+                    transformed.meta["preprocess"],
+                )
+
+                self.assertIsNotNone(restored)
+                restored_values = restored.xywh()
+                for expected, actual in zip(bbox, restored_values):
+                    self.assertAlmostEqual(actual, expected, delta=1e-2)
+
     def test_basic_transform_allows_empty_targets(self):
         sample = HFDetectionRowParser(["car"], "meta").parse(row(size=(32, 24), objects=[]))
         transformed = DetectionTransform(
