@@ -36,5 +36,5 @@ class DetectionSample:
 class DetectionBatch:
     images: Any
     targets: Any
-    samples: list[DetectionSample]
+    samples: list[DetectionSample] | None = None
     meta: dict[str, Any] = field(default_factory=dict)

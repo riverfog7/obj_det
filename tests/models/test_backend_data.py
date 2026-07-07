@@ -8,6 +8,7 @@ from datasets import Dataset
 from obj_det.datasets.models import BBox
 from obj_det.models.adapters.torchvision import _TorchvisionTrainerDataset, _torchvision_collate
 from obj_det.models.data.hf_dataset import HFTrainerDetectionDataset
+from obj_det.models.data.sample import DetectionBatch
 from obj_det.models.data.loader import dataloader_kwargs
 from obj_det.models.data.profiling import measure_dataloader, measure_decode_backend, measure_transform
 from obj_det.models.data.hf_targets import make_hf_detection_collate, sample_to_coco_annotation
@@ -79,6 +80,11 @@ class BackendDataTest(unittest.TestCase):
 
         self.assertIn("sample", dataset[0])
         self.assertEqual(len(batch["samples"]), 2)
+
+    def test_detection_batch_does_not_require_samples(self):
+        batch = DetectionBatch(images=[], targets=[])
+
+        self.assertIsNone(batch.samples)
 
     def test_sample_source_can_predecode_images(self):
         ds = Dataset.from_list([row(), row(image_id="img2")])
