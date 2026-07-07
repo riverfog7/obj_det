@@ -49,7 +49,7 @@ class RowParserTest(unittest.TestCase):
         self.assertEqual(sample.targets[0].bbox_xywh, (4.0, 5.0, 8.0, 10.0))
 
     def test_drops_ignore_missing_meta_and_unknown_label(self):
-        parser = HFDetectionRowParser(classes=["car"], label_mode="meta")
+        parser = HFDetectionRowParser(classes=["car"], label_mode="meta", track_stats=True)
         sample = parser.parse(row(objects=[
             {"bbox": [1, 1, 2, 2], "native_label": "car", "meta_label": "car", "ignore": True, "iscrowd": False, "meta_json": "{}"},
             {"bbox": [1, 1, 2, 2], "native_label": "dog", "meta_label": None, "ignore": False, "iscrowd": False, "meta_json": "{}"},
@@ -66,6 +66,12 @@ class RowParserTest(unittest.TestCase):
                 "label_not_in_classes": 1,
             },
         )
+
+    def test_stats_are_disabled_by_default(self):
+        parser = HFDetectionRowParser(classes=["car"], label_mode="meta")
+        parser.parse(row())
+
+        self.assertEqual(parser.stats_snapshot(), {})
 
     def test_decode_path_pil_and_numpy(self):
         parser = HFDetectionRowParser(classes=["car"], label_mode="meta")

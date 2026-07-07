@@ -40,6 +40,15 @@ class BoundaryTest(unittest.TestCase):
 
         self.assertEqual(offenders, [])
 
+    def test_training_adapters_do_not_enable_parser_stats(self):
+        offenders = []
+        for path in pathlib.Path("src/obj_det/models/adapters").glob("*.py"):
+            text = path.read_text()
+            if "track_stats=True" in text:
+                offenders.append(str(path))
+
+        self.assertEqual(offenders, [])
+
 
 if __name__ == "__main__":
     unittest.main()

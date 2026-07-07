@@ -21,46 +21,62 @@ logger = logging.getLogger(__name__)
 class HFDetectionRowParser:
     """Convert one standardized HF row into a runtime detection sample."""
 
-    def __init__(self, classes: list[str], label_mode: LabelMode, *, decode_backend: str = "pil"):
+    def __init__(
+        self,
+        classes: list[str],
+        label_mode: LabelMode,
+        *,
+        decode_backend: str = "pil",
+        track_stats: bool = False,
+    ):
         self.classes = classes
         self.label_mode = label_mode
         self.class_to_id = {name: idx for idx, name in enumerate(classes)}
         if decode_backend not in {"pil", "opencv"}:
             raise ValueError(f"Unknown decode_backend: {decode_backend}")
         self.decode_backend = decode_backend
+        self.track_stats = track_stats
         self.stats: Counter[str] = Counter()
 
     def parse(self, row: dict[str, Any], *, decode_image: bool = True) -> DetectionSample:
         image = self.decode_image(row["image"]) if decode_image else None
         targets: list[DetectionTarget] = []
+        track_stats = self.track_stats
+        stats = self.stats
 
         for obj in row.get("objects", []):
-            self.stats["total_objects"] += 1
+            if track_stats:
+                stats["total_objects"] += 1
             if obj.get("ignore", False):
-                self.stats["ignored_objects"] += 1
+                if track_stats:
+                    stats["ignored_objects"] += 1
                 continue
 
             label = obj.get("native_label") if self.label_mode == "native" else obj.get("meta_label")
             if label is None or label == "":
-                if self.label_mode == "meta":
-                    self.stats["missing_meta_label"] += 1
-                else:
-                    self.stats["missing_native_label"] += 1
+                if track_stats:
+                    if self.label_mode == "meta":
+                        stats["missing_meta_label"] += 1
+                    else:
+                        stats["missing_native_label"] += 1
                 continue
 
             if label not in self.class_to_id:
-                self.stats["label_not_in_classes"] += 1
+                if track_stats:
+                    stats["label_not_in_classes"] += 1
                 logger.debug("Skipping object with label outside class list: %s", label)
                 continue
 
             try:
                 bbox = bbox_xywh(obj["bbox"])
             except (KeyError, TypeError, ValueError) as exc:
-                self.stats["invalid_bbox"] += 1
+                if track_stats:
+                    stats["invalid_bbox"] += 1
                 logger.warning("Skipping object with invalid bbox: %s", exc)
                 continue
 
-            self.stats["kept_objects"] += 1
+            if track_stats:
+                stats["kept_objects"] += 1
             targets.append(
                 DetectionTarget(
                     bbox_xywh=bbox,

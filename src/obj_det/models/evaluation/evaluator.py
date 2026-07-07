@@ -30,7 +30,7 @@ class DetectionEvaluator:
         *,
         model_key: str,
     ) -> EvalResult:
-        parser = HFDetectionRowParser(classes=eval_cfg.classes, label_mode=eval_cfg.label_mode)
+        parser = HFDetectionRowParser(classes=eval_cfg.classes, label_mode=eval_cfg.label_mode, track_stats=True)
         samples = [parser.parse_targets_only(row) for row in ds]
         stats = parser.stats_snapshot()
         if stats:
