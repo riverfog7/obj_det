@@ -134,10 +134,12 @@ class ExperimentRunner:
     def run_config(self) -> dict:
         world_size = int(os.environ.get("WORLD_SIZE", "1"))
         data = self.exp.model_dump(mode="json")
+        gradient_accumulation_steps = int(getattr(self.exp.train, "gradient_accumulation_steps", 1))
         data["batch"] = {
             "batch_size": self.exp.train.batch_size,
             "world_size": world_size,
-            "effective_batch_size": self.exp.train.batch_size * world_size,
+            "gradient_accumulation_steps": gradient_accumulation_steps,
+            "effective_batch_size": self.exp.train.batch_size * world_size * gradient_accumulation_steps,
         }
         return data
 
