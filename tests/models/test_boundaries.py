@@ -49,6 +49,21 @@ class BoundaryTest(unittest.TestCase):
 
         self.assertEqual(offenders, [])
 
+    def test_only_base_adapter_owns_final_evaluate(self):
+        evaluate_defs = []
+        for path in pathlib.Path("src/obj_det/models/adapters").glob("*.py"):
+            if "def evaluate(" in path.read_text():
+                evaluate_defs.append(path.name)
+
+        self.assertEqual(evaluate_defs, ["base.py"])
+
+    def test_base_evaluate_uses_predictions_and_shared_evaluator(self):
+        text = pathlib.Path("src/obj_det/models/adapters/base.py").read_text()
+
+        self.assertIn("DetectionEvaluator", text)
+        self.assertIn("self.predict(ds, artifact, predict_cfg)", text)
+        self.assertIn("evaluator.evaluate(ds, predictions, eval_cfg", text)
+
 
 if __name__ == "__main__":
     unittest.main()
