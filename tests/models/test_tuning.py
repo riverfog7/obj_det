@@ -193,7 +193,9 @@ class TuningTest(unittest.TestCase):
     def test_search_space_validation_rejects_bad_specs(self):
         bad_specs = [
             {"lr": {"type": "FLOAT", "low": 0.0, "high": 1.0}},
+            {"lr": {"type": "floot", "low": 0.0, "high": 1.0}},
             {"lr": {"type": "float", "low": 1.0, "high": 0.0}},
+            {"steps": {"type": "int", "low": 10, "high": 1}},
             {"lr": {"type": "float", "low": 0.0}},
             {"opt": {"type": "categorical", "choices": []}},
             {"opt": {"type": "categorical", "choices": ["a"], "log": True}},
@@ -288,6 +290,82 @@ class TuningTest(unittest.TestCase):
         self.assertEqual(adapter.trained[0][1], expected)
         self.assertEqual(result.trials[0].hparams, expected)
         self.assertEqual(result.best_trial.hparams, expected)
+
+    def test_hpo_uses_lightweight_eval_by_default(self):
+        class EvalConfigRecordingAdapter(DummyAdapter):
+            def __init__(self):
+                super().__init__()
+                self.eval_configs = []
+
+            def evaluate(self, ds, artifact, eval_cfg, *, logger=None, log_prefix=None):
+                self.eval_configs.append(eval_cfg)
+                return super().evaluate(ds, artifact, eval_cfg, logger=logger, log_prefix=log_prefix)
+
+        sys.modules["optuna"] = FakeOptuna([
+            {"score": 0.3, "fail": False},
+        ])
+        ds = Dataset.from_list([row()])
+        adapter = EvalConfigRecordingAdapter()
+        with TemporaryDirectory() as tmp:
+            preprocess = PreprocessConfig(image_size=32)
+            TuningRunner().optimize(
+                adapter=adapter,
+                train_ds=ds,
+                val_ds=ds,
+                base_train_cfg=TrainConfig(run_key="r", classes=["car"], output_dir=Path(tmp) / "base", preprocess=preprocess),
+                eval_cfg=EvalConfig(
+                    classes=["car"],
+                    preprocess=preprocess,
+                    compute_per_class=True,
+                    compute_per_condition=True,
+                    compute_per_domain=True,
+                    compute_per_size=True,
+                ),
+                search_space=SearchSpace(params={
+                    "score": {"type": "float", "low": 0.0, "high": 1.0},
+                    "fail": {"type": "categorical", "choices": [True, False]},
+                }),
+                tuning_cfg=TuningConfig(study_name="s", n_trials=1, output_dir=Path(tmp)),
+            )
+
+        self.assertEqual(len(adapter.eval_configs), 1)
+        used_cfg = adapter.eval_configs[0]
+        self.assertFalse(used_cfg.compute_per_class)
+        self.assertFalse(used_cfg.compute_per_condition)
+        self.assertFalse(used_cfg.compute_per_domain)
+        self.assertFalse(used_cfg.compute_per_size)
+
+    def test_hpo_can_opt_into_detailed_eval(self):
+        class EvalConfigRecordingAdapter(DummyAdapter):
+            def __init__(self):
+                super().__init__()
+                self.eval_configs = []
+
+            def evaluate(self, ds, artifact, eval_cfg, *, logger=None, log_prefix=None):
+                self.eval_configs.append(eval_cfg)
+                return super().evaluate(ds, artifact, eval_cfg, logger=logger, log_prefix=log_prefix)
+
+        sys.modules["optuna"] = FakeOptuna([
+            {"score": 0.3, "fail": False},
+        ])
+        ds = Dataset.from_list([row()])
+        adapter = EvalConfigRecordingAdapter()
+        with TemporaryDirectory() as tmp:
+            preprocess = PreprocessConfig(image_size=32)
+            TuningRunner().optimize(
+                adapter=adapter,
+                train_ds=ds,
+                val_ds=ds,
+                base_train_cfg=TrainConfig(run_key="r", classes=["car"], output_dir=Path(tmp) / "base", preprocess=preprocess),
+                eval_cfg=EvalConfig(classes=["car"], preprocess=preprocess, compute_per_class=True),
+                search_space=SearchSpace(params={
+                    "score": {"type": "float", "low": 0.0, "high": 1.0},
+                    "fail": {"type": "categorical", "choices": [True, False]},
+                }),
+                tuning_cfg=TuningConfig(study_name="s", n_trials=1, output_dir=Path(tmp), detailed_eval=True),
+            )
+
+        self.assertTrue(adapter.eval_configs[0].compute_per_class)
 
     def test_hpo_logs_trial_train_eval_and_objective(self):
         sys.modules["optuna"] = FakeOptuna([
