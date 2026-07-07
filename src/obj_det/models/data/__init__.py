@@ -4,6 +4,7 @@ from .hf_targets import make_hf_detection_collate, sample_to_coco_annotation
 from .loader import dataloader_kwargs
 from .profiling import measure_dataloader, measure_decode_backend, measure_transform
 from .row_parser import HFDetectionRowParser
+from .row_batches import iter_hf_row_batches
 from .sample import DetectionBatch, DetectionSample, DetectionTarget
 from .sample_source import DetectionSampleSource
 from .ultralytics_dataset import HFUltralyticsDetectionDataset, ultralytics_detection_collate
@@ -22,6 +23,7 @@ __all__ = [
     "DetectionTarget",
     "HFDetectionRowParser",
     "HFUltralyticsDetectionDataset",
+    "iter_hf_row_batches",
     "area_xywh",
     "bbox_to_original",
     "bbox_xywh",

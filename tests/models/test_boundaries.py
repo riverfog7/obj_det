@@ -31,6 +31,15 @@ class BoundaryTest(unittest.TestCase):
         self.assertIn("warnings.warn", text)
         self.assertNotIn("raise NotImplementedError(\"Ultralytics train-time eval_strategy", text)
 
+    def test_predict_paths_do_not_eagerly_list_dataset(self):
+        offenders = []
+        for path in pathlib.Path("src/obj_det/models/adapters").glob("*.py"):
+            text = path.read_text()
+            if "list(ds)" in text:
+                offenders.append(str(path))
+
+        self.assertEqual(offenders, [])
+
 
 if __name__ == "__main__":
     unittest.main()

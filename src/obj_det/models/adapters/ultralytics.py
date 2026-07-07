@@ -12,6 +12,7 @@ from obj_det.datasets.models import BBox
 from obj_det.models.adapters.base import BaseModelAdapter
 from obj_det.models.data.loader import dataloader_kwargs
 from obj_det.models.data.row_parser import HFDetectionRowParser
+from obj_det.models.data.row_batches import iter_hf_row_batches
 from obj_det.models.data.sample_source import DetectionSampleSource
 from obj_det.models.data.ultralytics_dataset import HFUltralyticsDetectionDataset, ultralytics_detection_collate
 from obj_det.models.data.transforms import bbox_to_original, build_detection_transform
@@ -113,10 +114,9 @@ class UltralyticsDetectionAdapter(BaseModelAdapter):
             decode_backend=predict_cfg.backend_params.get("decode_backend", "pil"),
         )
         transform = build_detection_transform(predict_cfg.preprocess)
-        rows = list(ds)
 
-        for start in range(0, len(rows), predict_cfg.batch_size):
-            originals = [parser.parse(row) for row in rows[start : start + predict_cfg.batch_size]]
+        for rows in iter_hf_row_batches(ds, predict_cfg.batch_size):
+            originals = [parser.parse(row) for row in rows]
             samples = [transform(sample) for sample in originals]
             results = model.predict(
                 source=[sample.image for sample in samples],

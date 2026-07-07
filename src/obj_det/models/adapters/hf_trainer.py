@@ -12,6 +12,7 @@ from obj_det.models.adapters.base import BaseModelAdapter
 from obj_det.models.data.hf_dataset import HFTrainerDetectionDataset
 from obj_det.models.data.hf_targets import make_hf_detection_collate
 from obj_det.models.data.row_parser import HFDetectionRowParser
+from obj_det.models.data.row_batches import iter_hf_row_batches
 from obj_det.models.data.sample_source import DetectionSampleSource
 from obj_det.models.data.transforms import bbox_to_original, build_detection_transform
 from obj_det.models.logging.base import BaseExperimentLogger
@@ -127,11 +128,10 @@ class HFTrainerDetectionAdapter(BaseModelAdapter):
         )
         transform = build_detection_transform(predict_cfg.preprocess)
         processor_kwargs = predict_cfg.backend_params.get("processor_kwargs", {"do_resize": False})
-        rows = list(ds)
 
         with torch.no_grad():
-            for start in range(0, len(rows), predict_cfg.batch_size):
-                original_samples = [parser.parse(row) for row in rows[start : start + predict_cfg.batch_size]]
+            for rows in iter_hf_row_batches(ds, predict_cfg.batch_size):
+                original_samples = [parser.parse(row) for row in rows]
                 samples = [transform(sample) for sample in original_samples]
                 inputs = processor(
                     images=[np.ascontiguousarray(sample.image) for sample in samples],

@@ -11,6 +11,7 @@ from obj_det.models.data.hf_dataset import HFTrainerDetectionDataset
 from obj_det.models.data.loader import dataloader_kwargs
 from obj_det.models.data.profiling import measure_dataloader, measure_decode_backend, measure_transform
 from obj_det.models.data.hf_targets import make_hf_detection_collate, sample_to_coco_annotation
+from obj_det.models.data.row_batches import iter_hf_row_batches
 from obj_det.models.data.row_parser import HFDetectionRowParser
 from obj_det.models.data.sample_source import DetectionSampleSource
 from obj_det.models.data.transforms import DetectionTransform
@@ -141,6 +142,23 @@ class BackendDataTest(unittest.TestCase):
         self.assertGreater(loader_stats["batches_per_second"], 0.0)
         self.assertEqual(decode_stats["images"], 2.0)
         self.assertGreater(decode_stats["images_per_second"], 0.0)
+
+    def test_hf_row_batches_use_indexing_not_whole_iteration(self):
+        rows = [row(), row(image_id="img2"), row(image_id="img3")]
+
+        class NoIterDataset:
+            def __len__(self):
+                return len(rows)
+
+            def __getitem__(self, idx):
+                return rows[idx]
+
+            def __iter__(self):
+                raise AssertionError("Do not iterate whole dataset")
+
+        batches = list(iter_hf_row_batches(NoIterDataset(), batch_size=2))
+
+        self.assertEqual([[item["image_id"] for item in batch] for batch in batches], [["img1", "img2"], ["img3"]])
 
     def test_transform_profiling_helper_returns_rate(self):
         parser = HFDetectionRowParser(["car"], "meta")
