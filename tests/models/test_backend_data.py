@@ -70,6 +70,16 @@ class BackendDataTest(unittest.TestCase):
         self.assertEqual(tuple(batch["bboxes"].shape), (1, 4))
         self.assertEqual(batch["batch_idx"].tolist(), [1.0])
 
+    def test_ultralytics_profiling_is_disabled_by_default(self):
+        ds = Dataset.from_list([row()])
+        parser = HFDetectionRowParser(["car"], "meta")
+        source = DetectionSampleSource(ds, parser)
+        transform = DetectionTransform(PreprocessConfig(image_size=64))
+        dataset = HFUltralyticsDetectionDataset(source, transform)
+
+        self.assertIsNone(DataLoaderConfig().profile_every_n)
+        self.assertIsNone(dataset.profile_every_n)
+
     def test_ultralytics_dataset_can_include_samples_for_debug(self):
         ds = Dataset.from_list([row(), row(image_id="img2")])
         parser = HFDetectionRowParser(["car"], "meta")
@@ -146,8 +156,18 @@ class BackendDataTest(unittest.TestCase):
 
         self.assertEqual(loader_stats["batches"], 2.0)
         self.assertGreater(loader_stats["batches_per_second"], 0.0)
+        opencv_decode_stats = measure_decode_backend(
+            [row(), row(image_id="img2")],
+            classes=["car"],
+            label_mode="meta",
+            decode_backend="opencv",
+            max_images=2,
+        )
+
         self.assertEqual(decode_stats["images"], 2.0)
         self.assertGreater(decode_stats["images_per_second"], 0.0)
+        self.assertEqual(opencv_decode_stats["images"], 2.0)
+        self.assertGreater(opencv_decode_stats["images_per_second"], 0.0)
 
     def test_hf_row_batches_use_indexing_not_whole_iteration(self):
         rows = [row(), row(image_id="img2"), row(image_id="img3")]

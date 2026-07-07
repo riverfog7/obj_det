@@ -203,9 +203,9 @@ class UltralyticsDetectionAdapter(BaseModelAdapter):
         }
         if train_cfg.max_steps is not None:
             overrides["epochs"] = max(1, int(train_cfg.max_epochs or 1))
+        overrides.update(train_cfg.backend_params.get("overrides", {}))
         if train_cfg.protocol in {"controlled", "equal_hpo"}:
             overrides.update(_CONTROLLED_AUG_OFF)
-        overrides.update(train_cfg.backend_params.get("overrides", {}))
         return overrides
 
     def _artifact_from_trainer(self, trainer, train_cfg: TrainConfig) -> ModelArtifact:
@@ -215,6 +215,7 @@ class UltralyticsDetectionAdapter(BaseModelAdapter):
         best = Path(best_value) if best_value else None
         checkpoint_path = last if last is not None and last.exists() else None
         meta = {
+            "protocol": train_cfg.protocol,
             "ultralytics_args": dict(vars(trainer.args)),
             "ultralytics_last": str(last) if last is not None else None,
             "ultralytics_best": str(best) if best is not None else None,

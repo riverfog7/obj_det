@@ -121,6 +121,42 @@ class UltralyticsLoggingTest(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "validation source is disabled"):
             trainer.get_dataloader("unused", batch_size=1, mode="val")
 
+    def test_controlled_protocol_disables_provider_augmentation_overrides(self):
+        adapter = UltralyticsDetectionAdapter(
+            ModelConfig(key="yolo", backend="ultralytics", model_name_or_path="yolo11n.pt")
+        )
+        cfg = TrainConfig(
+            run_key="r",
+            classes=["car"],
+            output_dir=Path("runs/test"),
+            preprocess=PreprocessConfig(image_size=64),
+            protocol="controlled",
+            backend_params={"overrides": {"mosaic": 1.0, "hsv_h": 0.5}},
+        )
+
+        overrides = adapter._train_overrides(cfg)
+
+        self.assertEqual(overrides["mosaic"], 0.0)
+        self.assertEqual(overrides["hsv_h"], 0.0)
+        self.assertEqual(overrides["mixup"], 0.0)
+
+    def test_ecosystem_protocol_allows_provider_augmentation_overrides(self):
+        adapter = UltralyticsDetectionAdapter(
+            ModelConfig(key="yolo", backend="ultralytics", model_name_or_path="yolo11n.pt")
+        )
+        cfg = TrainConfig(
+            run_key="r",
+            classes=["car"],
+            output_dir=Path("runs/test"),
+            preprocess=PreprocessConfig(image_size=64),
+            protocol="ecosystem",
+            backend_params={"overrides": {"mosaic": 1.0}},
+        )
+
+        overrides = adapter._train_overrides(cfg)
+
+        self.assertEqual(overrides["mosaic"], 1.0)
+
     def test_artifact_uses_last_checkpoint_for_external_eval(self):
         adapter = UltralyticsDetectionAdapter(
             ModelConfig(key="yolo", backend="ultralytics", model_name_or_path="yolo11n.pt")
@@ -148,6 +184,7 @@ class UltralyticsLoggingTest(unittest.TestCase):
             )
 
         self.assertEqual(artifact.checkpoint_path, last)
+        self.assertEqual(artifact.meta["protocol"], "controlled")
         self.assertEqual(artifact.meta["ultralytics_best"], str(best))
         self.assertEqual(artifact.meta["checkpoint_selection"], "last_external_eval")
 
