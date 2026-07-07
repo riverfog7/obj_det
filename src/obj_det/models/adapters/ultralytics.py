@@ -315,7 +315,13 @@ class UltralyticsDetectionAdapter(BaseModelAdapter):
                     source = self._hf_val_source
                     transform = self._hf_eval_transform
                     if source is None:
-                        raise RuntimeError("Ultralytics internal validation source is disabled")
+                        return DataLoader(
+                            [],
+                            batch_size=batch_size,
+                            shuffle=False,
+                            collate_fn=ultralytics_detection_collate,
+                            **dataloader_kwargs(self._hf_loader_cfg),
+                        )
 
                 dataset = HFUltralyticsDetectionDataset(
                     source,

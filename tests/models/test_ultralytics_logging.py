@@ -100,7 +100,7 @@ class UltralyticsLoggingTest(unittest.TestCase):
         self.assertIs(train_loader.dataset.transform, train_transform)
         self.assertIs(val_loader.dataset.transform, eval_transform)
 
-    def test_custom_trainer_refuses_validation_without_val_source(self):
+    def test_custom_trainer_returns_empty_validation_loader_without_val_source(self):
         adapter = UltralyticsDetectionAdapter(
             ModelConfig(key="yolo", backend="ultralytics", model_name_or_path="yolo11n.pt")
         )
@@ -118,8 +118,10 @@ class UltralyticsLoggingTest(unittest.TestCase):
             logging_steps=100,
         )
 
-        with self.assertRaisesRegex(RuntimeError, "validation source is disabled"):
-            trainer.get_dataloader("unused", batch_size=1, mode="val")
+        val_loader = trainer.get_dataloader("unused", batch_size=1, mode="val")
+
+        self.assertEqual(len(val_loader.dataset), 0)
+        self.assertEqual(len(val_loader), 0)
 
     def test_controlled_protocol_disables_provider_augmentation_overrides(self):
         adapter = UltralyticsDetectionAdapter(
