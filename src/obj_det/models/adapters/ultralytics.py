@@ -71,10 +71,21 @@ class UltralyticsDetectionAdapter(BaseModelAdapter):
 
         set_seed(train_cfg.seed)
         train_cfg.output_dir.mkdir(parents=True, exist_ok=True)
-        parser = HFDetectionRowParser(classes=train_cfg.classes, label_mode=train_cfg.label_mode, decode_backend=train_cfg.loader.decode_backend)
-        transform = build_detection_transform(train_cfg.preprocess, train_cfg.augmentation, seed=train_cfg.seed)
+        parser = HFDetectionRowParser(
+            classes=train_cfg.classes,
+            label_mode=train_cfg.label_mode,
+            decode_backend=train_cfg.loader.decode_backend,
+        )
+        train_transform = build_detection_transform(train_cfg.preprocess, train_cfg.augmentation, seed=train_cfg.seed)
+        eval_transform = build_detection_transform(train_cfg.preprocess)
         train_source = DetectionSampleSource(train_ds, parser, predecode_images=train_cfg.loader.predecode_images)
-        val_source = DetectionSampleSource(val_ds, parser, predecode_images=train_cfg.loader.predecode_images)
+        val_source = None
+        if train_cfg.backend_params.get("use_internal_val", False):
+            warnings.warn(
+                "Ultralytics internal validation is not implemented; validation source was not built.",
+                RuntimeWarning,
+                stacklevel=2,
+            )
         overrides = self._train_overrides(train_cfg)
 
         trainer_cls = self._trainer_class(DetectionTrainer)
@@ -82,7 +93,8 @@ class UltralyticsDetectionAdapter(BaseModelAdapter):
             overrides=overrides,
             train_source=train_source,
             val_source=val_source,
-            transform=transform,
+            train_transform=train_transform,
+            eval_transform=eval_transform,
             loader_cfg=train_cfg.loader,
             classes=train_cfg.classes,
             max_steps=train_cfg.max_steps,
@@ -226,7 +238,8 @@ class UltralyticsDetectionAdapter(BaseModelAdapter):
                 *args,
                 train_source,
                 val_source,
-                transform,
+                train_transform,
+                eval_transform,
                 loader_cfg,
                 classes,
                 max_steps,
@@ -237,7 +250,8 @@ class UltralyticsDetectionAdapter(BaseModelAdapter):
             ):
                 self._hf_train_source = train_source
                 self._hf_val_source = val_source
-                self._hf_transform = transform
+                self._hf_train_transform = train_transform
+                self._hf_eval_transform = eval_transform
                 self._hf_loader_cfg = loader_cfg
                 self._hf_classes = classes
                 self._hf_max_steps = max_steps
@@ -293,10 +307,18 @@ class UltralyticsDetectionAdapter(BaseModelAdapter):
                 }
 
             def get_dataloader(self, dataset_path: str, batch_size: int = 16, rank: int = 0, mode: str = "train"):
-                source = self._hf_train_source if mode == "train" else self._hf_val_source
+                if mode == "train":
+                    source = self._hf_train_source
+                    transform = self._hf_train_transform
+                else:
+                    source = self._hf_val_source
+                    transform = self._hf_eval_transform
+                    if source is None:
+                        raise RuntimeError("Ultralytics internal validation source is disabled")
+
                 dataset = HFUltralyticsDetectionDataset(
                     source,
-                    self._hf_transform,
+                    transform,
                     include_samples=bool(getattr(self._hf_loader_cfg, "include_samples_in_batch", False)),
                     profile_every_n=getattr(self._hf_loader_cfg, "profile_every_n", None),
                 )

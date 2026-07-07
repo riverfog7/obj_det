@@ -8,7 +8,7 @@ from types import SimpleNamespace
 import torch
 
 from obj_det.models.adapters.ultralytics import UltralyticsDetectionAdapter
-from obj_det.models.schemas import PreprocessConfig, ModelConfig, TrainConfig
+from obj_det.models.schemas import DataLoaderConfig, PreprocessConfig, ModelConfig, TrainConfig
 
 
 class RecordingLogger:
@@ -46,7 +46,8 @@ class UltralyticsLoggingTest(unittest.TestCase):
         trainer = trainer_cls(
             train_source=None,
             val_source=None,
-            transform=None,
+            train_transform=None,
+            eval_transform=None,
             loader_cfg=None,
             classes=["car"],
             max_steps=None,
@@ -72,6 +73,53 @@ class UltralyticsLoggingTest(unittest.TestCase):
         self.assertEqual(len(logger.events), 2)
         self.assertEqual(logger.events[1][1], 3)
         self.assertEqual(logger.events[1][0]["train/box_loss"], 0.5)
+
+    def test_custom_trainer_uses_separate_train_and_eval_transforms(self):
+        adapter = UltralyticsDetectionAdapter(
+            ModelConfig(key="yolo", backend="ultralytics", model_name_or_path="yolo11n.pt")
+        )
+        trainer_cls = adapter._trainer_class(FakeDetectionTrainer)
+        train_transform = object()
+        eval_transform = object()
+        trainer = trainer_cls(
+            train_source=[object()],
+            val_source=[object()],
+            train_transform=train_transform,
+            eval_transform=eval_transform,
+            loader_cfg=DataLoaderConfig(num_workers=0, pin_memory=False),
+            classes=["car"],
+            max_steps=None,
+            logger=None,
+            log_prefix="train",
+            logging_steps=100,
+        )
+
+        train_loader = trainer.get_dataloader("unused", batch_size=1, mode="train")
+        val_loader = trainer.get_dataloader("unused", batch_size=1, mode="val")
+
+        self.assertIs(train_loader.dataset.transform, train_transform)
+        self.assertIs(val_loader.dataset.transform, eval_transform)
+
+    def test_custom_trainer_refuses_validation_without_val_source(self):
+        adapter = UltralyticsDetectionAdapter(
+            ModelConfig(key="yolo", backend="ultralytics", model_name_or_path="yolo11n.pt")
+        )
+        trainer_cls = adapter._trainer_class(FakeDetectionTrainer)
+        trainer = trainer_cls(
+            train_source=[object()],
+            val_source=None,
+            train_transform=object(),
+            eval_transform=object(),
+            loader_cfg=DataLoaderConfig(num_workers=0, pin_memory=False),
+            classes=["car"],
+            max_steps=None,
+            logger=None,
+            log_prefix="train",
+            logging_steps=100,
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "validation source is disabled"):
+            trainer.get_dataloader("unused", batch_size=1, mode="val")
 
     def test_artifact_uses_last_checkpoint_for_external_eval(self):
         adapter = UltralyticsDetectionAdapter(
