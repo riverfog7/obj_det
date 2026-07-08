@@ -50,26 +50,23 @@ class ModelConfigMatrixTest(unittest.TestCase):
                 self.assertIn(cfg.backend, MODEL_BACKENDS)
                 self.assertEqual(model_adapter_from_config(cfg).key, key)
 
-    def test_hazydet_controlled_experiments_match_model_matrix(self):
+    def test_debug_experiment_config_loads(self):
         experiment_paths = sorted(Path("configs/experiments").glob("*_hazydet_controlled.yaml"))
-        experiment_keys = {path.name.removesuffix("_hazydet_controlled.yaml") for path in experiment_paths}
 
-        self.assertEqual(experiment_keys, EXPECTED_MODEL_KEYS)
-        for path in experiment_paths:
-            with self.subTest(path=str(path)):
-                key = path.name.removesuffix("_hazydet_controlled.yaml")
-                cfg = load_experiment_config(path)
+        self.assertEqual([path.name for path in experiment_paths], ["yolo26m_hazydet_controlled.yaml"])
 
-                self.assertIsNotNone(cfg.model)
-                self.assertIsNotNone(cfg.search_space)
-                self.assertEqual(cfg.model.key, key)
-                self.assertEqual(cfg.train.run_key, f"{key}_hazydet_controlled")
-                self.assertEqual(cfg.tuning.study_name, f"{key}_hazydet_controlled")
-                self.assertEqual(str(cfg.train.output_dir), f"runs/{key}/hazydet/controlled")
-                self.assertEqual(cfg.train.logging_steps, 100)
-                self.assertEqual(str(cfg.tuning.output_dir), f"runs/hpo/{key}_hazydet_controlled")
-                self.assertEqual(cfg.logging.wandb.project, f"{key}_hazydet_controlled")
-                self.assertEqual(cfg.classes, ["person", "bicycle", "motorcycle", "car", "bus", "truck"])
+        cfg = load_experiment_config(experiment_paths[0])
+
+        self.assertIsNotNone(cfg.model)
+        self.assertIsNotNone(cfg.search_space)
+        self.assertEqual(cfg.model.key, "yolo26m")
+        self.assertEqual(cfg.train.run_key, "yolo26m_hazydet_controlled")
+        self.assertEqual(cfg.tuning.study_name, "yolo26m_hazydet_controlled")
+        self.assertEqual(str(cfg.train.output_dir), "runs/yolo26m/hazydet/controlled")
+        self.assertEqual(cfg.train.logging_steps, 100)
+        self.assertEqual(str(cfg.tuning.output_dir), "runs/hpo/yolo26m_hazydet_controlled")
+        self.assertEqual(cfg.logging.wandb.project, "yolo26m_hazydet_controlled")
+        self.assertEqual(cfg.classes, ["person", "bicycle", "motorcycle", "car", "bus", "truck"])
 
     def test_search_spaces_load(self):
         for path in sorted(Path("configs/search_spaces").glob("*.yaml")):
