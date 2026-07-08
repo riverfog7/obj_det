@@ -142,6 +142,22 @@ class UltralyticsLoggingTest(unittest.TestCase):
         self.assertEqual(overrides["hsv_h"], 0.0)
         self.assertEqual(overrides["mixup"], 0.0)
 
+    def test_train_overrides_include_lrf(self):
+        adapter = UltralyticsDetectionAdapter(
+            ModelConfig(key="yolo", backend="ultralytics", model_name_or_path="yolo11n.pt")
+        )
+        cfg = TrainConfig(
+            run_key="r",
+            classes=["car"],
+            output_dir=Path("runs/test"),
+            preprocess=PreprocessConfig(image_size=64),
+            hparams={"lrf": 0.05},
+        )
+
+        overrides = adapter._train_overrides(cfg)
+
+        self.assertEqual(overrides["lrf"], 0.05)
+
     def test_ecosystem_protocol_allows_provider_augmentation_overrides(self):
         adapter = UltralyticsDetectionAdapter(
             ModelConfig(key="yolo", backend="ultralytics", model_name_or_path="yolo11n.pt")
