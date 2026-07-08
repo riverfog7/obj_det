@@ -130,9 +130,9 @@ class ExperimentPlanTest(unittest.TestCase):
             SearchSpace(params={"bad": {"type": "categorical", "choices": []}})
 
     def test_existing_direct_experiment_configs_still_load(self):
-        cfg = load_experiment_config(Path("configs/experiments/yolo26s_hazydet_controlled.yaml"))
+        cfg = load_experiment_config(Path("configs/experiments/yolo26m_hazydet_controlled.yaml"))
 
-        self.assertEqual(cfg.model.key, "yolo26s")
+        self.assertEqual(cfg.model.key, "yolo26m")
         self.assertIsNotNone(cfg.search_space)
 
     def _write_plan_tree(self, root: Path, *, include_torchvision_default: bool = True) -> Path:

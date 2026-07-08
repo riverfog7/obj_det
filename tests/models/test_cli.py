@@ -202,6 +202,98 @@ class CliTest(unittest.TestCase):
         self.assertTrue(any(row.get("metrics") == {"train/loss": 1.25} for row in rows))
         self.assertEqual(rows[-1]["event"], "finish_run")
 
+class PlanCliTest(unittest.TestCase):
+    def test_models_cli_exposes_plan_commands(self):
+        result = CliRunner().invoke(app, ["plan", "--help"])
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        for command in ["list", "resolve", "optimize", "final", "run"]:
+            self.assertIn(command, result.output)
+
+    def test_plan_list_prints_model_keys_and_backends(self):
+        result = CliRunner().invoke(app, ["plan", "list", "configs/plans/hazydet_controlled.yaml"])
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertIn("yolo26m\tultralytics", result.output)
+        self.assertIn("rtdetr_r50vd\thf_trainer", result.output)
+
+    def test_plan_resolve_writes_selected_config(self):
+        with TemporaryDirectory() as tmp:
+            out_dir = Path(tmp) / "resolved"
+            result = CliRunner().invoke(
+                app,
+                [
+                    "plan",
+                    "resolve",
+                    "configs/plans/hazydet_controlled.yaml",
+                    "--model",
+                    "yolo26m",
+                    "--out",
+                    str(out_dir),
+                ],
+            )
+
+            path = out_dir / "yolo26m.yaml"
+            self.assertEqual(result.exit_code, 0, result.output)
+            self.assertIn("yolo26m.yaml", result.output)
+            self.assertTrue(path.exists())
+
+    def test_plan_run_requires_model_or_all(self):
+        result = CliRunner().invoke(app, ["plan", "run", "configs/plans/hazydet_controlled.yaml"])
+
+        self.assertNotEqual(result.exit_code, 0)
+        self.assertIn("requires at least one --model or explicit --all", result.output)
+
+    def test_plan_optimize_selected_model_saves_results(self):
+        from obj_det.models.schemas.tuning import BestTrial, TuningResult
+
+        class FakeRunner:
+            def __init__(self, exp):
+                self.exp = exp
+
+            def optimize(self):
+                return TuningResult(
+                    study_name=self.exp.tuning.study_name,
+                    best_trial=BestTrial(
+                        study_name=self.exp.tuning.study_name,
+                        trial_number=0,
+                        hparams={"lr0": 0.003},
+                        metric_name="map_50_95",
+                        metric_value=0.1,
+                    ),
+                )
+
+        saved_paths = []
+
+        def fake_save(model, path):
+            saved_paths.append(Path(path))
+            return Path(path)
+
+        with (
+            patch("obj_det.models.cli.ExperimentRunner", FakeRunner),
+            patch("obj_det.models.cli.save_tuning_result", side_effect=fake_save),
+            patch("obj_det.models.cli.save_best_trial", side_effect=fake_save),
+        ):
+            result = CliRunner().invoke(
+                app,
+                [
+                    "plan",
+                    "optimize",
+                    "configs/plans/hazydet_controlled.yaml",
+                    "--model",
+                    "yolo26m",
+                ],
+            )
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertEqual(
+            saved_paths,
+            [
+                Path("runs/hpo/yolo26m_hazydet_controlled/tuning_result.json"),
+                Path("runs/hpo/yolo26m_hazydet_controlled/best_trial.json"),
+            ],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

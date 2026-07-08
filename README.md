@@ -312,21 +312,40 @@ OBJ_DET_RUN_BACKEND_SMOKE=1 uv run python -m unittest tests.models.test_backend_
 
 ## Model CLI
 
-Model runs can be driven by direct YAML configs under `configs/experiments/`.
-This direct style is useful for debugging one resolved run. The model CLI only
-loads converted Hugging Face datasets from disk.
+Plan configs are the preferred CLI entrypoint for model sweeps. You can run each
+stage manually:
 
 ```bash
-uv run obj-det models train configs/experiments/yolo11n_hazydet_controlled.yaml
+uv run obj-det models plan list configs/plans/hazydet_controlled.yaml
+uv run obj-det models plan resolve configs/plans/hazydet_controlled.yaml --model yolo26m
+uv run obj-det models plan optimize configs/plans/hazydet_controlled.yaml --model yolo26m
+uv run obj-det models plan final configs/plans/hazydet_controlled.yaml --model yolo26m
+```
 
-uv run obj-det models evaluate configs/experiments/yolo11n_hazydet_controlled.yaml \
-  --artifact runs/yolo11n/hazydet/controlled/artifact.json \
+Or run the full plan pipeline for explicit models:
+
+```bash
+uv run obj-det models plan run configs/plans/hazydet_controlled.yaml --model yolo26m
+```
+
+`plan run` requires `--model` or explicit `--all` so a whole benchmark is not
+launched accidentally.
+
+Direct YAML configs under `configs/experiments/` are still supported for one-off
+debugging; this repo keeps only `yolo26m_hazydet_controlled.yaml` as that debug
+fixture.
+
+```bash
+uv run obj-det models train configs/experiments/yolo26m_hazydet_controlled.yaml
+
+uv run obj-det models evaluate configs/experiments/yolo26m_hazydet_controlled.yaml \
+  --artifact runs/yolo26m/hazydet/controlled/artifact.json \
   --split test
 
-uv run obj-det models optimize configs/experiments/yolo11n_hazydet_controlled.yaml
+uv run obj-det models optimize configs/experiments/yolo26m_hazydet_controlled.yaml
 
-uv run obj-det models final configs/experiments/yolo11n_hazydet_controlled.yaml \
-  --best-trial runs/hpo/yolo11n_hazydet_controlled/best_trial.json
+uv run obj-det models final configs/experiments/yolo26m_hazydet_controlled.yaml \
+  --best-trial runs/hpo/yolo26m_hazydet_controlled/best_trial.json
 ```
 
 Reusable model-training config directories:

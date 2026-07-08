@@ -19,7 +19,7 @@ class ModelCliTest(unittest.TestCase):
         result = CliRunner().invoke(models_app, ["--help"])
 
         self.assertEqual(result.exit_code, 0)
-        for command in ["train", "evaluate", "optimize", "final"]:
+        for command in ["train", "evaluate", "optimize", "final", "plan"]:
             self.assertIn(command, result.output)
 
 
