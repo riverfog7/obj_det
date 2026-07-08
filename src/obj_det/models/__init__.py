@@ -19,6 +19,14 @@ from .schemas import (
     TuningConfig,
     TuningResult,
 )
+from .plan import (
+    ExperimentPlanRunner,
+    deep_merge,
+    expand_experiment_plan,
+    load_and_expand_experiment_plan,
+    load_experiment_plan,
+    write_resolved_experiments,
+)
 from .runner import ExperimentRunner
 
 __all__ = [
@@ -29,8 +37,13 @@ __all__ = [
     "EvalConfig",
     "EvalResult",
     "ExperimentConfig",
+    "ExperimentPlanRunner",
     "ExperimentRunner",
+    "deep_merge",
+    "expand_experiment_plan",
     "FinalConfig",
+    "load_and_expand_experiment_plan",
+    "load_experiment_plan",
     "LoggingConfig",
     "ModelArtifact",
     "ModelConfig",
@@ -42,4 +55,5 @@ __all__ = [
     "TrainConfig",
     "TuningConfig",
     "TuningResult",
+    "write_resolved_experiments",
 ]
