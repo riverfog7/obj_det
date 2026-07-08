@@ -1,0 +1,10 @@
+models:
+  - ../models/yolov8n.yaml
+  - ../models/yolov8s.yaml
+  - ../models/yolov8m.yaml
+  - ../models/yolo11n.yaml
+  - ../models/yolo11s.yaml
+  - ../models/yolo11m.yaml
+  - ../models/yolo26n.yaml
+  - ../models/yolo26s.yaml
+  - ../models/yolo26m.yaml

@@ -1,0 +1,4 @@
+policy: basic
+horizontal_flip_p: 0.5
+color_jitter_strength: 0.05
+color_jitter_p: 0.5

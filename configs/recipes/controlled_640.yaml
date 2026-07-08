@@ -1,0 +1,40 @@
+protocol: controlled
+
+preprocess_file: ../preprocess/640.yaml
+augmentation_file: ../augmentations/basic_light.yaml
+
+train:
+  max_epochs: 50
+  logging_steps: 100
+  amp: true
+  eval_strategy:
+    enabled: false
+    every_epochs: 1
+
+eval:
+  conf_threshold: 0.001
+  iou_threshold: 0.7
+  compute_per_class: false
+  compute_per_condition: false
+  compute_per_domain: false
+  compute_per_size: false
+
+predict:
+  conf_threshold: 0.001
+  iou_threshold: 0.7
+
+tuning:
+  direction: maximize
+  n_trials: 12
+  sampler: tpe
+  pruner: none
+  objective_metric: map_50_95
+  catch_trial_errors: false
+  detailed_eval: false
+
+final:
+  seeds: [0, 1, 2]
+  evaluate_val: true
+
+logging:
+  backends: [local, wandb]

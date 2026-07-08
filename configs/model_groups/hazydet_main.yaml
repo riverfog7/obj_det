@@ -1,0 +1,26 @@
+models:
+  - ../models/yolo26n.yaml
+  - ../models/yolo26s.yaml
+  - ../models/yolo26m.yaml
+  - ../models/yolo11n.yaml
+  - ../models/yolo11s.yaml
+  - ../models/yolo11m.yaml
+  - ../models/yolov8n.yaml
+  - ../models/yolov8s.yaml
+  - ../models/yolov8m.yaml
+  - ../models/rtdetr_r50vd.yaml
+  - ../models/dfine_small.yaml
+  - ../models/dfine_nano.yaml
+  - ../models/rfdetr_small.yaml
+  - ../models/rfdetr_base.yaml
+  - ../models/rfdetr_medium.yaml
+  - ../models/rfdetr_nano.yaml
+  - ../models/detr_r50.yaml
+  - ../models/conditional_detr_r50.yaml
+  - ../models/deformable_detr.yaml
+  - ../models/yolos_tiny.yaml
+  - ../models/yolos_small.yaml
+  - ../models/fasterrcnn_r50.yaml
+  - ../models/retinanet_r50.yaml
+  - ../models/fcos_r50.yaml
+  - ../models/maskrcnn_r50_boxonly.yaml

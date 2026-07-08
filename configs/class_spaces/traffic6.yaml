@@ -1,0 +1,8 @@
+label_mode: meta
+classes:
+  - person
+  - bicycle
+  - motorcycle
+  - car
+  - bus
+  - truck

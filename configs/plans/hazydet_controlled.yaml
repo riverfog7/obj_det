@@ -1,0 +1,107 @@
+key: hazydet_controlled
+
+dataset_file: ../dataset_refs/hazydet.yaml
+class_space_file: ../class_spaces/traffic6.yaml
+recipe_file: ../recipes/controlled_640.yaml
+model_group_file: ../model_groups/hazydet_main.yaml
+
+run_template:
+  run_key: "{model_key}_{dataset_key}_{protocol}"
+  output_dir: "runs/{model_key}/{dataset_key}/{protocol}"
+  tuning_study_name: "{model_key}_{dataset_key}_{protocol}"
+  tuning_output_dir: "runs/hpo/{model_key}_{dataset_key}_{protocol}"
+  final_output_dir: "runs/{model_key}/{dataset_key}/{protocol}/final"
+  wandb_project: "{dataset_key}_{protocol}"
+
+backend_defaults:
+  ultralytics:
+    train:
+      batch_size: 32
+      loader:
+        num_workers: 16
+        pin_memory: true
+        persistent_workers: true
+        prefetch_factor: 4
+        decode_backend: opencv
+      hparams:
+        optimizer: SGD
+        lr0: 0.003
+        lrf: 0.01
+        weight_decay: 0.0005
+        momentum: 0.937
+        warmup_epochs: 3
+        cos_lr: true
+    eval:
+      batch_size: 16
+    predict:
+      batch_size: 16
+    search_space_file: ../search_spaces/yolo_controlled_sgd.yaml
+
+  hf_trainer:
+    train:
+      batch_size: 8
+      loader:
+        num_workers: 8
+        pin_memory: true
+        persistent_workers: true
+        prefetch_factor: 4
+        decode_backend: opencv
+      hparams:
+        learning_rate: 0.00003
+        weight_decay: 0.0001
+        warmup_ratio: 0.05
+        lr_scheduler_type: cosine
+        max_grad_norm: 1.0
+    eval:
+      batch_size: 8
+    predict:
+      batch_size: 8
+    search_space_file: ../search_spaces/hf_transformer_controlled.yaml
+
+  torchvision:
+    train:
+      batch_size: 8
+      loader:
+        num_workers: 8
+        pin_memory: true
+        persistent_workers: true
+        prefetch_factor: 4
+        decode_backend: opencv
+      hparams:
+        optimizer: sgd
+        learning_rate: 0.005
+        weight_decay: 0.0005
+        momentum: 0.9
+        warmup_ratio: 0.0
+        lr_scheduler_type: cosine
+        max_grad_norm: 1.0
+    eval:
+      batch_size: 8
+    predict:
+      batch_size: 8
+    search_space_file: ../search_spaces/torchvision_sgd_controlled.yaml
+
+model_overrides:
+  rfdetr_base:
+    train:
+      batch_size: 4
+    eval:
+      batch_size: 4
+    predict:
+      batch_size: 4
+
+  yolo26m:
+    train:
+      batch_size: 16
+
+  yolo11m:
+    train:
+      batch_size: 16
+
+  yolov8m:
+    train:
+      batch_size: 16
+
+tags:
+  - hazydet
+  - controlled

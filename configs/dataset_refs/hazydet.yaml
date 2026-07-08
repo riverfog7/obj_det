@@ -1,0 +1,6 @@
+key: hazydet
+path: datasets/hazydet
+train_split: train
+val_split: val
+test_split: test
+default_class_space: traffic6
