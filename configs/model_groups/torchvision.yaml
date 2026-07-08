@@ -1,0 +1,5 @@
+models:
+  - ../models/fasterrcnn_r50.yaml
+  - ../models/retinanet_r50.yaml
+  - ../models/fcos_r50.yaml
+  - ../models/maskrcnn_r50_boxonly.yaml

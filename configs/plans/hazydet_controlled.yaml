@@ -3,7 +3,7 @@ key: hazydet_controlled
 dataset_file: ../dataset_refs/hazydet.yaml
 class_space_file: ../class_spaces/traffic6.yaml
 recipe_file: ../recipes/controlled_640.yaml
-model_group_file: ../model_groups/hazydet_main.yaml
+model_group_file: ../model_groups/detection_main.yaml
 
 run_template:
   run_key: "{model_key}_{dataset_key}_{protocol}"

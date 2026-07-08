@@ -92,6 +92,30 @@ class ExperimentPlanTest(unittest.TestCase):
         self.assertIsNotNone(cfg.search_space)
         self.assertEqual(cfg.train.hparams["lrf"], 0.01)
 
+    def test_repo_model_groups_are_dataset_agnostic_and_loadable(self):
+        import yaml
+
+        from obj_det.models.experiment import load_model_config
+        from obj_det.models.schemas import ModelGroupConfig
+
+        group_dir = Path("configs/model_groups")
+        self.assertFalse((group_dir / "hazydet_main.yaml").exists())
+
+        expected_groups = {
+            "detection_main.yaml",
+            "yolo_family.yaml",
+            "hf_transformers.yaml",
+            "torchvision.yaml",
+        }
+        self.assertTrue(expected_groups.issubset({path.name for path in group_dir.glob("*.yaml")}))
+
+        for group_path in group_dir.glob("*.yaml"):
+            with self.subTest(group=group_path.name):
+                group = ModelGroupConfig.model_validate(yaml.safe_load(group_path.read_text(encoding="utf-8")))
+                for model_path in group.models:
+                    cfg = load_model_config(group_path.parent / model_path)
+                    self.assertTrue(cfg.key)
+
     def test_repo_search_spaces_validate(self):
         for path in [
             Path("configs/search_spaces/yolo_controlled_sgd.yaml"),
