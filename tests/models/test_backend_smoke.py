@@ -101,6 +101,40 @@ class BackendSmokeTest(unittest.TestCase):
         self.assertEqual(len(preds), 1)
         self.assertEqual(result.num_images, 1)
 
+    def test_torchvision_smoke(self):
+        ds = tiny_dataset()
+        with TemporaryDirectory() as tmp:
+            preprocess = PreprocessConfig(image_size=64)
+            adapter = model_adapter_from_config(ModelConfig(
+                key="torchvision_smoke",
+                backend="torchvision",
+                model_name_or_path="fasterrcnn_resnet50_fpn",
+                params={"weights": None, "min_size": 64, "max_size": 64},
+            ))
+            artifact = adapter.train(ds, ds, TrainConfig(
+                run_key="torchvision_smoke",
+                classes=["car"],
+                output_dir=Path(tmp) / "torchvision",
+                preprocess=preprocess,
+                loader=DataLoaderConfig(pin_memory=False),
+                max_epochs=1,
+                max_steps=1,
+                batch_size=1,
+                amp=False,
+                logging_steps=1,
+                hparams={"optimizer": "sgd", "learning_rate": 0.001},
+            ))
+            preds = list(adapter.predict(ds, artifact, PredictConfig(
+                classes=["car"], preprocess=preprocess, batch_size=1, conf_threshold=0.0
+            )))
+            result = adapter.evaluate(ds, artifact, EvalConfig(
+                classes=["car"], preprocess=preprocess, conf_threshold=0.0
+            ))
+
+        self.assertIsNotNone(artifact.checkpoint_path)
+        self.assertEqual(len(preds), 1)
+        self.assertEqual(result.num_images, 1)
+
 
 if __name__ == "__main__":
     unittest.main()
