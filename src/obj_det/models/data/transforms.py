@@ -71,7 +71,11 @@ class DetectionTransform:
         transforms: list[Any] = []
         if augmentation.policy in {"basic", "weather"} and augmentation.horizontal_flip_p > 0:
             transforms.append(A.HorizontalFlip(p=augmentation.horizontal_flip_p))
-        if augmentation.policy in {"basic", "weather"} and augmentation.color_jitter_strength > 0:
+        if (
+            augmentation.policy in {"basic", "weather"}
+            and augmentation.color_jitter_strength > 0
+            and augmentation.color_jitter_p > 0
+        ):
             hue = min(0.5, augmentation.color_jitter_strength * 0.5)
             transforms.append(
                 A.ColorJitter(
@@ -79,7 +83,7 @@ class DetectionTransform:
                     contrast=augmentation.color_jitter_strength,
                     saturation=augmentation.color_jitter_strength,
                     hue=hue,
-                    p=1.0,
+                    p=augmentation.color_jitter_p,
                 )
             )
         transforms.extend(

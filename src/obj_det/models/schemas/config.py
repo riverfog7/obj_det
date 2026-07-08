@@ -46,6 +46,7 @@ class AugmentationConfig(ModelSchema):
     policy: Literal["none", "basic", "weather", "provider"] = "none"
     horizontal_flip_p: float = Field(default=0.0, ge=0.0, le=1.0)
     color_jitter_strength: float = Field(default=0.0, ge=0.0)
+    color_jitter_p: float = Field(default=0.0, ge=0.0, le=1.0)
 
 
 class DataLoaderConfig(ModelSchema):

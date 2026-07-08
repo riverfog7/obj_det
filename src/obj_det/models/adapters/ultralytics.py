@@ -196,6 +196,7 @@ class UltralyticsDetectionAdapter(BaseModelAdapter):
             "device": train_cfg.backend_params.get("device"),
             "optimizer": hparams.get("optimizer", train_cfg.backend_params.get("optimizer", "auto")),
             "lr0": float(hparams.get("lr0", hparams.get("learning_rate", 0.01))),
+            "lrf": float(hparams.get("lrf", 0.01)),
             "weight_decay": float(hparams.get("weight_decay", 0.0005)),
             "momentum": float(hparams.get("momentum", 0.937)),
             "warmup_epochs": float(hparams.get("warmup_epochs", 3.0)),
