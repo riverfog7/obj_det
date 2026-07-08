@@ -277,7 +277,32 @@ Model configs live in `configs/models/`. The current controlled matrix includes:
 - HF Trainer: RT-DETR, D-FINE nano/small, RF-DETR nano/small/medium/base, DETR, Conditional DETR, Deformable DETR, YOLOS tiny/small.
 - TorchVision: Faster R-CNN, RetinaNet, FCOS, and Mask R-CNN box-only.
 
-HazyDet controlled experiment configs live in `configs/experiments/*_hazydet_controlled.yaml`.
+HazyDet controlled experiment plans live in `configs/plans/`. A plan composes one
+HF dataset reference, one class space, one recipe, and a model group into many
+validated `ExperimentConfig` objects. `configs/experiments/` remains supported
+for direct/debug single-run configs, but plans are the preferred scalable source
+of truth.
+
+```python
+from obj_det.models.plan import (
+    ExperimentPlanRunner,
+    load_and_expand_experiment_plan,
+    load_experiment_plan,
+    write_resolved_experiments,
+)
+from obj_det.models.runner import ExperimentRunner
+
+exps = load_and_expand_experiment_plan("configs/plans/hazydet_controlled.yaml")
+for exp in exps:
+    ExperimentRunner(exp).optimize()
+
+plan = load_experiment_plan("configs/plans/hazydet_controlled.yaml")
+write_resolved_experiments(plan, "runs/resolved_configs/hazydet_controlled")
+ExperimentPlanRunner(plan).optimize_all(model_keys=["yolo26s", "rtdetr_r50vd"])
+```
+
+The generated resolved YAMLs are artifacts for inspection/reproduction, not the
+main source of truth.
 
 Optional backend smoke tests are available with:
 
@@ -287,8 +312,9 @@ OBJ_DET_RUN_BACKEND_SMOKE=1 uv run python -m unittest tests.models.test_backend_
 
 ## Model CLI
 
-Model runs can also be driven by YAML configs under `configs/experiments/`.
-The model CLI only loads converted Hugging Face datasets from disk.
+Model runs can be driven by direct YAML configs under `configs/experiments/`.
+This direct style is useful for debugging one resolved run. The model CLI only
+loads converted Hugging Face datasets from disk.
 
 ```bash
 uv run obj-det models train configs/experiments/yolo11n_hazydet_controlled.yaml
@@ -303,12 +329,17 @@ uv run obj-det models final configs/experiments/yolo11n_hazydet_controlled.yaml 
   --best-trial runs/hpo/yolo11n_hazydet_controlled/best_trial.json
 ```
 
-Use `model_file` and `search_space_file` when you want reusable configs:
+Reusable model-training config directories:
 
 ```text
-configs/models/
-configs/search_spaces/
-configs/experiments/
+configs/dataset_refs/    # HF dataset path and split names
+configs/class_spaces/    # labels and native/meta label mode
+configs/recipes/         # protocol defaults, preprocess, augmentation, HPO/final defaults
+configs/model_groups/    # reusable model lists
+configs/plans/           # preferred scalable experiment entrypoints
+configs/models/          # backend/model identity
+configs/search_spaces/   # Optuna parameter spaces
+configs/experiments/     # optional direct/debug resolved configs
 ```
 
 Training configs can set `train.logging_steps` to control scalar training-log
