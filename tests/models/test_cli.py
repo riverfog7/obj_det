@@ -16,7 +16,7 @@ from obj_det.models.schemas.artifact import ModelArtifact
 
 
 class DummyAdapter:
-    def train(self, train_ds, val_ds, train_cfg, *, logger=None, log_prefix="train"):
+    def train(self, train_ds, val_ds, train_cfg, *, epoch_eval_cfg=None, logger=None, log_prefix="train"):
         if logger is not None:
             logger.log_metrics({f"{log_prefix}/loss": 1.25}, step=1)
         return ModelArtifact(
@@ -257,7 +257,7 @@ class PlanCliTest(unittest.TestCase):
                     best_trial=BestTrial(
                         study_name=self.exp.tuning.study_name,
                         trial_number=0,
-                        hparams={"lr0": 0.003},
+                        hparams={"learning_rate": 0.003},
                         metric_name="map_50_95",
                         metric_value=0.1,
                     ),

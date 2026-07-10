@@ -75,7 +75,7 @@ class BackendSmokeTest(unittest.TestCase):
             adapter = model_adapter_from_config(ModelConfig(
                 key="yolo_smoke",
                 backend="ultralytics",
-                model_name_or_path="yolo11n.pt",
+                model_name_or_path=os.environ.get("OBJ_DET_YOLO_SMOKE_MODEL", "yolo11n.pt"),
             ))
             artifact = adapter.train(ds, ds, TrainConfig(
                 run_key="yolo_smoke",
@@ -87,7 +87,7 @@ class BackendSmokeTest(unittest.TestCase):
                 max_steps=1,
                 batch_size=1,
                 amp=False,
-                hparams={"lr0": 0.001, "warmup_epochs": 0},
+                hparams={"learning_rate": 0.001},
                 backend_params={"device": "cpu", "overrides": {"verbose": False}},
             ))
             preds = list(adapter.predict(ds, artifact, PredictConfig(
@@ -122,7 +122,7 @@ class BackendSmokeTest(unittest.TestCase):
                 batch_size=1,
                 amp=False,
                 logging_steps=1,
-                hparams={"optimizer": "sgd", "learning_rate": 0.001},
+                hparams={"learning_rate": 0.001},
             ))
             preds = list(adapter.predict(ds, artifact, PredictConfig(
                 classes=["car"], preprocess=preprocess, batch_size=1, conf_threshold=0.0

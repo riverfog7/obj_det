@@ -155,6 +155,8 @@ class YoloSourceDataset(BaseSourceDataset):
 
         native_label = class_names.get(class_id)
         if native_label is None:
+            self._increment_import_stat("source_objects_seen")
+            self._increment_import_stat("dropped_unknown_labels")
             logger.warning(
                 "Skipping YOLO label with unknown class id: %s:%s class_id=%s",
                 label_path,

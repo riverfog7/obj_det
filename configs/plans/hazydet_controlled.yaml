@@ -16,26 +16,17 @@ run_template:
 backend_defaults:
   ultralytics:
     train:
-      batch_size: 32
+      batch_size: 8
       loader:
         num_workers: 16
         pin_memory: true
         persistent_workers: true
         prefetch_factor: 4
         decode_backend: opencv
-      hparams:
-        optimizer: SGD
-        lr0: 0.003
-        lrf: 0.01
-        weight_decay: 0.0005
-        momentum: 0.937
-        warmup_epochs: 3
-        cos_lr: true
     eval:
-      batch_size: 16
+      batch_size: 8
     predict:
-      batch_size: 16
-    search_space_file: ../search_spaces/yolo_controlled_sgd.yaml
+      batch_size: 8
 
   hf_trainer:
     train:
@@ -46,17 +37,10 @@ backend_defaults:
         persistent_workers: true
         prefetch_factor: 4
         decode_backend: opencv
-      hparams:
-        learning_rate: 0.00003
-        weight_decay: 0.0001
-        warmup_ratio: 0.05
-        lr_scheduler_type: cosine
-        max_grad_norm: 1.0
     eval:
       batch_size: 8
     predict:
       batch_size: 8
-    search_space_file: ../search_spaces/hf_transformer_controlled.yaml
 
   torchvision:
     train:
@@ -67,19 +51,10 @@ backend_defaults:
         persistent_workers: true
         prefetch_factor: 4
         decode_backend: opencv
-      hparams:
-        optimizer: sgd
-        learning_rate: 0.005
-        weight_decay: 0.0005
-        momentum: 0.9
-        warmup_ratio: 0.0
-        lr_scheduler_type: cosine
-        max_grad_norm: 1.0
     eval:
       batch_size: 8
     predict:
       batch_size: 8
-    search_space_file: ../search_spaces/torchvision_sgd_controlled.yaml
 
 model_overrides:
   rfdetr_base:

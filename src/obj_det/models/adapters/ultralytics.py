@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import os
 import warnings
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Iterator
 
+import torch
 from datasets import Dataset
 from torch.utils.data import DataLoader
 
@@ -19,8 +21,15 @@ from obj_det.models.data.transforms import bbox_to_original, build_detection_tra
 from obj_det.models.logging.base import BaseExperimentLogger
 from obj_det.models.logging.metrics import flatten_prefixed_scalar_mapping
 from obj_det.models.schemas.artifact import ModelArtifact
-from obj_det.models.schemas.config import PredictConfig, TrainConfig
+from obj_det.models.schemas.config import EvalConfig, PredictConfig, TrainConfig
 from obj_det.models.schemas.prediction import PredictionObject, PredictionRecord
+from obj_det.models.training import (
+    CheckpointState,
+    build_adamw_param_groups,
+    build_warmup_cosine_scheduler,
+    optimizer_steps_per_epoch,
+    require_metric,
+)
 from obj_det.models.utils.repro import set_seed
 
 
@@ -54,6 +63,7 @@ class UltralyticsDetectionAdapter(BaseModelAdapter):
         val_ds: Dataset,
         train_cfg: TrainConfig,
         *,
+        epoch_eval_cfg: EvalConfig | None = None,
         logger: BaseExperimentLogger | None = None,
         log_prefix: str = "train",
     ) -> ModelArtifact:
@@ -62,9 +72,12 @@ class UltralyticsDetectionAdapter(BaseModelAdapter):
         except ImportError as exc:
             raise ImportError("Install the models extra to use backend='ultralytics'.") from exc
 
-        if train_cfg.eval_strategy.enabled:
+        self._validate_single_process_device(train_cfg)
+
+        if train_cfg.eval_strategy.enabled and epoch_eval_cfg is None:
             warnings.warn(
-                "Ultralytics train-time eval_strategy is ignored; final metrics come from adapter.evaluate().",
+                "Ultralytics eval_strategy is enabled but no epoch_eval_cfg was supplied; "
+                "epoch validation will not run.",
                 RuntimeWarning,
                 stacklevel=2,
             )
@@ -87,6 +100,8 @@ class UltralyticsDetectionAdapter(BaseModelAdapter):
                 stacklevel=2,
             )
         overrides = self._train_overrides(train_cfg)
+        checkpoint_state = CheckpointState(train_cfg.output_dir)
+        shared_protocol = train_cfg.protocol in {"controlled", "equal_hpo"}
 
         trainer_cls = self._trainer_class(DetectionTrainer)
         trainer = trainer_cls(
@@ -101,10 +116,30 @@ class UltralyticsDetectionAdapter(BaseModelAdapter):
             logger=logger,
             log_prefix=log_prefix,
             logging_steps=train_cfg.logging_steps,
+            stop_after_epochs=int(train_cfg.max_epochs or train_cfg.scheduler.total_epochs),
+            gradient_accumulation_steps=train_cfg.gradient_accumulation_steps,
+            optimizer_cfg=train_cfg.optimizer,
+            scheduler_cfg=train_cfg.scheduler,
+            shared_protocol=shared_protocol,
+            checkpoint_state=checkpoint_state,
+            trial_final_only=(
+                epoch_eval_cfg is None
+                and not train_cfg.checkpoint.keep_all_epoch_checkpoints
+            ),
+            adapter=self,
+            val_dataset=val_ds,
+            epoch_eval_cfg=epoch_eval_cfg,
+            train_cfg=train_cfg,
         )
         trainer.train()
 
-        return self._artifact_from_trainer(trainer, train_cfg)
+        if logger is not None:
+            logger.log_metrics(
+                {f"{log_prefix}/optimizer_steps": trainer._protocol_optimizer_steps},
+                step=trainer._protocol_optimizer_steps,
+            )
+
+        return self._artifact_from_trainer(trainer, train_cfg, checkpoint_state=checkpoint_state)
 
     def predict(
         self,
@@ -135,6 +170,7 @@ class UltralyticsDetectionAdapter(BaseModelAdapter):
                 imgsz=predict_cfg.preprocess.image_size,
                 conf=predict_cfg.conf_threshold,
                 iou=predict_cfg.iou_threshold,
+                max_det=predict_cfg.max_detections_per_image,
                 device=device,
                 verbose=False,
                 save=False,
@@ -175,16 +211,21 @@ class UltralyticsDetectionAdapter(BaseModelAdapter):
 
     def _train_overrides(self, train_cfg: TrainConfig) -> dict:
         hparams = train_cfg.hparams
+        shared_protocol = train_cfg.protocol in {"controlled", "equal_hpo"}
         project = train_cfg.output_dir.parent if train_cfg.output_dir.parent != Path("") else Path(".")
         overrides = {
             "task": "detect",
             "mode": "train",
-            "model": str(self.cfg.model_name_or_path),
+            "model": str(self.cfg.weights or self.cfg.model_name_or_path),
             "data": "hf://obj-det",
             "project": str(project),
             "name": train_cfg.output_dir.name,
             "exist_ok": True,
-            "epochs": int(train_cfg.max_epochs or 1),
+            "epochs": int(
+                train_cfg.scheduler.total_epochs
+                if shared_protocol
+                else (train_cfg.max_epochs or 1)
+            ),
             "imgsz": int(train_cfg.preprocess.image_size),
             "batch": int(train_cfg.batch_size),
             "seed": int(train_cfg.seed),
@@ -192,36 +233,138 @@ class UltralyticsDetectionAdapter(BaseModelAdapter):
             "workers": int(train_cfg.loader.num_workers),
             "val": False,
             "plots": False,
-            "save": True,
+            "save": (
+                bool(train_cfg.checkpoint.keep_all_epoch_checkpoints)
+                if shared_protocol
+                else True
+            ),
+            "save_period": (
+                int(train_cfg.checkpoint.save_every_epochs)
+                if shared_protocol and train_cfg.checkpoint.keep_all_epoch_checkpoints
+                else -1
+            ),
             "device": train_cfg.backend_params.get("device"),
-            "optimizer": hparams.get("optimizer", train_cfg.backend_params.get("optimizer", "auto")),
+            "optimizer": (
+                "AdamW"
+                if shared_protocol
+                else hparams.get("optimizer", train_cfg.backend_params.get("optimizer", "auto"))
+            ),
             "lr0": float(hparams.get("lr0", hparams.get("learning_rate", 0.01))),
-            "lrf": float(hparams.get("lrf", 0.01)),
-            "weight_decay": float(hparams.get("weight_decay", 0.0005)),
-            "momentum": float(hparams.get("momentum", 0.937)),
-            "warmup_epochs": float(hparams.get("warmup_epochs", 3.0)),
-            "cos_lr": bool(hparams.get("cos_lr", False)),
+            "lrf": float(
+                train_cfg.scheduler.min_lr_ratio
+                if shared_protocol
+                else hparams.get("lrf", 0.01)
+            ),
+            "weight_decay": float(
+                train_cfg.optimizer.weight_decay
+                if shared_protocol
+                else hparams.get("weight_decay", 0.0005)
+            ),
+            "momentum": float(
+                train_cfg.optimizer.beta1
+                if shared_protocol
+                else hparams.get("momentum", 0.937)
+            ),
+            "warmup_epochs": float(0.0 if shared_protocol else hparams.get("warmup_epochs", 3.0)),
+            "cos_lr": bool(False if shared_protocol else hparams.get("cos_lr", False)),
+            "patience": 0 if shared_protocol else train_cfg.backend_params.get("patience", 100),
+            "nbs": int(
+                train_cfg.batch_size * train_cfg.gradient_accumulation_steps
+                if shared_protocol
+                else train_cfg.backend_params.get("nbs", 64)
+            ),
         }
         if train_cfg.max_steps is not None:
             overrides["epochs"] = max(1, int(train_cfg.max_epochs or 1))
         overrides.update(train_cfg.backend_params.get("overrides", {}))
         if train_cfg.protocol in {"controlled", "equal_hpo"}:
+            overrides.update(
+                {
+                    "epochs": int(train_cfg.scheduler.total_epochs),
+                    "optimizer": "AdamW",
+                    "lr0": float(hparams.get("learning_rate", 0.01)),
+                    "lrf": float(train_cfg.scheduler.min_lr_ratio),
+                    "weight_decay": float(train_cfg.optimizer.weight_decay),
+                    "momentum": float(train_cfg.optimizer.beta1),
+                    "warmup_epochs": 0.0,
+                    "cos_lr": False,
+                    "patience": 0,
+                    "nbs": int(train_cfg.batch_size * train_cfg.gradient_accumulation_steps),
+                }
+            )
             overrides.update(_CONTROLLED_AUG_OFF)
         return overrides
 
-    def _artifact_from_trainer(self, trainer, train_cfg: TrainConfig) -> ModelArtifact:
+    def _validate_single_process_device(self, train_cfg: TrainConfig) -> None:
+        device = train_cfg.backend_params.get("device")
+        if isinstance(device, (list, tuple)):
+            multi_device = len(device) > 1
+        elif isinstance(device, str):
+            normalized = device.strip().strip("[]")
+            multi_device = len([item for item in normalized.split(",") if item.strip()]) > 1
+        else:
+            multi_device = False
+        world_size = int(os.environ.get("WORLD_SIZE", "1"))
+        if multi_device or world_size > 1:
+            raise NotImplementedError(
+                "The Ultralytics HF-backed adapter requires a single training process; "
+                "multi-device Ultralytics would lose its in-memory dataset and shared epoch controller"
+            )
+
+    def _artifact_from_trainer(
+        self,
+        trainer,
+        train_cfg: TrainConfig,
+        *,
+        checkpoint_state: CheckpointState | None = None,
+    ) -> ModelArtifact:
         last_value = getattr(trainer, "last", None)
         best_value = getattr(trainer, "best", None)
         last = Path(last_value) if last_value else None
         best = Path(best_value) if best_value else None
-        checkpoint_path = last if last is not None and last.exists() else None
+        selected = None
+        if checkpoint_state is not None and train_cfg.early_stopping.restore_best:
+            selected = checkpoint_state.best_checkpoint
+        if selected is None and checkpoint_state is not None:
+            selected = checkpoint_state.last_checkpoint
+        selected_is_best = checkpoint_state is not None and checkpoint_state.best_checkpoint is not None and selected == checkpoint_state.best_checkpoint
+        checkpoint_path = selected or (last if last is not None and last.exists() else None)
+        if train_cfg.protocol in {"controlled", "equal_hpo"}:
+            optimizer_meta = {
+                **train_cfg.optimizer.model_dump(mode="json"),
+                "learning_rate": float(train_cfg.hparams.get("learning_rate", 0.01)),
+            }
+            scheduler_meta = train_cfg.scheduler.model_dump(mode="json")
+        else:
+            optimizer_meta = {
+                "name": train_cfg.hparams.get(
+                    "optimizer",
+                    train_cfg.backend_params.get("optimizer", "auto"),
+                ),
+                "learning_rate": float(
+                    train_cfg.hparams.get("lr0", train_cfg.hparams.get("learning_rate", 0.01))
+                ),
+                "weight_decay": float(train_cfg.hparams.get("weight_decay", 0.0005)),
+                "momentum": float(train_cfg.hparams.get("momentum", 0.937)),
+            }
+            scheduler_meta = {
+                "name": "cosine" if train_cfg.hparams.get("cos_lr", False) else "linear",
+                "warmup_epochs": float(train_cfg.hparams.get("warmup_epochs", 3.0)),
+                "min_lr_ratio": float(train_cfg.hparams.get("lrf", 0.01)),
+            }
         meta = {
             "protocol": train_cfg.protocol,
             "ultralytics_args": dict(vars(trainer.args)),
             "ultralytics_last": str(last) if last is not None else None,
             "ultralytics_best": str(best) if best is not None else None,
-            "checkpoint_selection": "last_external_eval",
+            "checkpoint_selection": "best_validation" if selected_is_best else "last",
+            "optimizer_steps": int(getattr(trainer, "_protocol_optimizer_steps", 0)),
+            "pretrained_source": str(self.cfg.weights or self.cfg.model_name_or_path),
+            "optimizer": optimizer_meta,
+            "scheduler": scheduler_meta,
         }
+        if checkpoint_state is not None:
+            meta.update(checkpoint_state.artifact_meta())
         return ModelArtifact(
             model_key=self.key,
             backend=self.backend,
@@ -230,6 +373,18 @@ class UltralyticsDetectionAdapter(BaseModelAdapter):
             label_mode=train_cfg.label_mode,
             artifact_path=Path(trainer.save_dir),
             checkpoint_path=checkpoint_path,
+            best_metric_name=(
+                train_cfg.early_stopping.metric
+                if checkpoint_state is not None
+                and checkpoint_state.best_epoch is not None
+                else None
+            ),
+            best_metric_value=(
+                checkpoint_state.best_metric
+                if checkpoint_state is not None
+                and checkpoint_state.best_epoch is not None
+                else None
+            ),
             meta=meta,
         )
 
@@ -248,6 +403,17 @@ class UltralyticsDetectionAdapter(BaseModelAdapter):
                 logger,
                 log_prefix,
                 logging_steps,
+                stop_after_epochs=1,
+                gradient_accumulation_steps=1,
+                optimizer_cfg=None,
+                scheduler_cfg=None,
+                shared_protocol=True,
+                checkpoint_state=None,
+                trial_final_only=False,
+                adapter=None,
+                val_dataset=None,
+                epoch_eval_cfg=None,
+                train_cfg=None,
                 **kwargs,
             ):
                 self._hf_train_source = train_source
@@ -262,11 +428,39 @@ class UltralyticsDetectionAdapter(BaseModelAdapter):
                 self._hf_logger = logger
                 self._hf_log_prefix = log_prefix
                 self._hf_logging_steps = logging_steps
+                self._protocol_stop_after_epochs = stop_after_epochs
+                self._protocol_gradient_accumulation_steps = gradient_accumulation_steps
+                self._protocol_optimizer_cfg = optimizer_cfg
+                self._protocol_scheduler_cfg = scheduler_cfg
+                self._protocol_shared = shared_protocol
+                self._protocol_checkpoint_state = checkpoint_state
+                self._protocol_trial_final_only = trial_final_only
+                self._protocol_adapter = adapter
+                self._protocol_val_dataset = val_dataset
+                self._protocol_epoch_eval_cfg = epoch_eval_cfg
+                self._protocol_train_cfg = train_cfg
+                self._protocol_scheduler = None
+                self._protocol_optimizer_steps = 0
+                self._protocol_nominal_accumulate = gradient_accumulation_steps
+                self._protocol_epoch_batches = 0
+                self._protocol_last_eval_epoch = 0
+                self._protocol_stop_at_epoch_end = False
                 super().__init__(*args, **kwargs)
 
             def run_callbacks(self, event: str):
                 super().run_callbacks(event)
-                if event == "on_train_batch_end":
+                if event == "on_train_epoch_start" and self._protocol_shared:
+                    self._protocol_epoch_batches = 0
+                    self.accumulate = self._protocol_nominal_accumulate
+                elif event == "on_train_batch_start" and self._protocol_shared:
+                    current_batch = self._protocol_epoch_batches + 1
+                    if current_batch == len(self.train_loader):
+                        remainder = len(self.train_loader) % self._protocol_nominal_accumulate
+                        if remainder:
+                            self.accumulate = remainder
+                elif event == "on_train_batch_end":
+                    if self._protocol_shared:
+                        self._protocol_epoch_batches += 1
                     self._hf_seen_steps += 1
                     if self._hf_seen_steps % self._hf_logging_steps == 0:
                         self._log_step_metrics()
@@ -276,6 +470,12 @@ class UltralyticsDetectionAdapter(BaseModelAdapter):
                         self.stop = True
                 elif event == "on_train_end":
                     self._log_step_metrics(force=True)
+                elif event == "on_train_epoch_end":
+                    if self._protocol_shared and self.epoch + 1 >= self._protocol_stop_after_epochs:
+                        self._protocol_stop_at_epoch_end = True
+                elif event == "on_fit_epoch_end":
+                    if self._protocol_shared:
+                        self._protocol_epoch_end()
 
             def _log_step_metrics(self, *, force: bool = False):
                 if self._hf_logger is None:
@@ -347,10 +547,176 @@ class UltralyticsDetectionAdapter(BaseModelAdapter):
                     self.best_fitness = fitness
                 return {}, fitness
 
+            def build_optimizer(self, model, name="AdamW", lr=0.001, momentum=0.9, decay=1e-5, iterations=1e5):
+                if not self._protocol_shared:
+                    return super().build_optimizer(
+                        model,
+                        name=name,
+                        lr=lr,
+                        momentum=momentum,
+                        decay=decay,
+                        iterations=iterations,
+                    )
+                cfg = self._protocol_optimizer_cfg
+                groups = build_adamw_param_groups(model, weight_decay=cfg.weight_decay)
+                return torch.optim.AdamW(
+                    groups,
+                    lr=float(lr),
+                    betas=(cfg.beta1, cfg.beta2),
+                    eps=cfg.epsilon,
+                )
+
+            def _setup_scheduler(self):
+                if not self._protocol_shared:
+                    return super()._setup_scheduler()
+                self._protocol_nominal_accumulate = int(self.accumulate)
+                steps_per_epoch = optimizer_steps_per_epoch(
+                    len(self.train_loader),
+                    self._protocol_nominal_accumulate,
+                )
+                cfg = self._protocol_scheduler_cfg
+                self._protocol_scheduler = build_warmup_cosine_scheduler(
+                    self.optimizer,
+                    warmup_steps=int(round(cfg.warmup_epochs * steps_per_epoch)),
+                    total_steps=int(cfg.total_epochs * steps_per_epoch),
+                    min_lr_ratio=cfg.min_lr_ratio,
+                )
+                self.scheduler = _NoOpEpochScheduler(self._protocol_scheduler)
+
+            def optimizer_step(self):
+                scaler = getattr(self, "scaler", None)
+                scale_before = scaler.get_scale() if scaler is not None else None
+                super().optimizer_step()
+                if (
+                    scale_before is not None
+                    and scaler.get_scale() < scale_before
+                ):
+                    return
+                self._protocol_optimizer_steps += 1
+                if self._protocol_shared and self._protocol_scheduler is not None:
+                    self._protocol_scheduler.step()
+
+            def _protocol_epoch_end(self):
+                epoch = int(self.epoch) + 1
+                if epoch <= self._protocol_last_eval_epoch:
+                    return
+
+                needs_manual_save = self._protocol_stop_at_epoch_end or self.stop
+                if self._protocol_epoch_eval_cfg is None and not needs_manual_save:
+                    return
+                if needs_manual_save and (not self.last.exists() or not self.args.save):
+                    if self._protocol_trial_final_only:
+                        self._save_trial_final_checkpoint()
+                    else:
+                        self.save_model()
+
+                epoch_checkpoint = self.wdir / f"epoch{self.epoch}.pt"
+                checkpoint_path = epoch_checkpoint if epoch_checkpoint.exists() else self.last
+                if not checkpoint_path.exists():
+                    raise FileNotFoundError(
+                        f"Ultralytics epoch {epoch} checkpoint was not created: {checkpoint_path}"
+                    )
+                metric = None
+                if self._protocol_epoch_eval_cfg is not None:
+                    artifact = self._protocol_adapter._artifact_for_checkpoint(
+                        self._protocol_train_cfg,
+                        checkpoint_path,
+                        artifact_path=Path(self.save_dir),
+                    )
+                    result = self._protocol_adapter.evaluate(
+                        self._protocol_val_dataset,
+                        artifact,
+                        self._protocol_epoch_eval_cfg,
+                        logger=self._hf_logger,
+                        log_prefix="val/epoch",
+                    )
+                    metric = require_metric(
+                        result.metrics,
+                        self._protocol_train_cfg.early_stopping.metric,
+                        context="early-stopping",
+                    )
+
+                should_stop = self._protocol_checkpoint_state.record_epoch(
+                    epoch=epoch,
+                    checkpoint_path=checkpoint_path,
+                    metric=metric,
+                    early_stopping_cfg=self._protocol_train_cfg.early_stopping,
+                )
+                self._protocol_last_eval_epoch = epoch
+                if self._hf_logger is not None:
+                    self._hf_logger.log_artifact(checkpoint_path, name=f"checkpoint_epoch_{epoch:03d}")
+                    if metric is not None:
+                        self._hf_logger.log_metrics(
+                            {
+                                "early_stopping/bad_epochs": self._protocol_checkpoint_state.early_stopping.bad_epochs,
+                                "early_stopping/best_metric": self._protocol_checkpoint_state.early_stopping.best_metric,
+                                "early_stopping/best_epoch": self._protocol_checkpoint_state.early_stopping.best_epoch,
+                            },
+                            step=self._protocol_optimizer_steps,
+                        )
+                if should_stop or self._protocol_stop_at_epoch_end:
+                    self.stop = True
+
+            def _save_trial_final_checkpoint(self):
+                original_best = self.best
+                self.best = self.last
+                try:
+                    return self.save_model()
+                finally:
+                    self.best = original_best
+
             def final_eval(self):
                 return None
 
         return HFBackedDetectionTrainer
+
+    def _artifact_for_checkpoint(
+        self,
+        train_cfg: TrainConfig,
+        checkpoint_path: Path,
+        *,
+        artifact_path: Path,
+    ) -> ModelArtifact:
+        return ModelArtifact(
+            model_key=self.key,
+            backend=self.backend,
+            run_key=train_cfg.run_key,
+            classes=train_cfg.classes,
+            label_mode=train_cfg.label_mode,
+            artifact_path=artifact_path,
+            checkpoint_path=checkpoint_path,
+        )
+
+
+class _NoOpEpochScheduler:
+    """Ignore Ultralytics' epoch-level scheduler step; the shared scheduler advances per optimizer update."""
+
+    def __init__(self, scheduler):
+        self.scheduler = scheduler
+
+    def step(self, *args, **kwargs):
+        return None
+
+    @property
+    def last_epoch(self):
+        return self.scheduler.last_epoch
+
+    @last_epoch.setter
+    def last_epoch(self, value):
+        # Ultralytics resets its epoch scheduler to ``start_epoch - 1`` after
+        # construction. The shared scheduler is optimizer-step based and has
+        # already applied factor(0), so forwarding that reset would make the
+        # first two optimizer updates use zero LR instead of only update zero.
+        return None
+
+    def state_dict(self):
+        return self.scheduler.state_dict()
+
+    def load_state_dict(self, state_dict):
+        return self.scheduler.load_state_dict(state_dict)
+
+    def get_last_lr(self):
+        return self.scheduler.get_last_lr()
 
 
 class _NoOpUltralyticsValidator:

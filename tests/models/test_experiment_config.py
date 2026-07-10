@@ -8,6 +8,7 @@ from pydantic import ValidationError
 
 from obj_det.models.experiment import load_experiment_config
 from obj_det.models.schemas.experiment import ExperimentConfig
+from obj_det.models.schemas.tuning import TuningConfig
 
 
 class ExperimentConfigTest(unittest.TestCase):
@@ -35,6 +36,7 @@ class ExperimentConfigTest(unittest.TestCase):
                         "enabled": True,
                         "every_epochs": 1,
                     },
+                    "gradient_accumulation_steps": 2,
                     "loader": {
                         "num_workers": 2,
                         "pin_memory": True,
@@ -56,9 +58,50 @@ class ExperimentConfigTest(unittest.TestCase):
         self.assertEqual(cfg.train.augmentation.horizontal_flip_p, 0.5)
         self.assertTrue(cfg.train.eval_strategy.enabled)
         self.assertEqual(cfg.train.eval_strategy.every_epochs, 1)
+        self.assertEqual(cfg.train.gradient_accumulation_steps, 2)
+        self.assertEqual(cfg.train.optimizer.name, "adamw")
+        self.assertEqual(cfg.train.scheduler.total_epochs, 50)
+        self.assertEqual(cfg.train.checkpoint.save_every_epochs, 1)
+        self.assertEqual(cfg.train.early_stopping.metric, "map_50_95")
         self.assertEqual(cfg.train.loader.num_workers, 2)
         self.assertTrue(cfg.train.loader.predecode_images)
         self.assertEqual(cfg.train.logging_steps, 100)
+        self.assertEqual(cfg.eval.max_detections_per_image, 300)
+        self.assertEqual(cfg.predict.max_detections_per_image, 300)
+
+    def test_controlled_protocol_schema_defaults_and_validation(self):
+        tuning = TuningConfig(study_name="s", output_dir=Path("runs/hpo"))
+
+        self.assertEqual(tuning.n_trials, 8)
+        self.assertEqual(tuning.trial_epochs, 10)
+        self.assertEqual(tuning.sampler, "tpe")
+        self.assertEqual(tuning.sampler_params, {"n_startup_trials": 3})
+        self.assertEqual(tuning.pruner, "none")
+        self.assertEqual(tuning.objective_metric, "map_50_95")
+        self.assertEqual(tuning.save_strategy, "final_only")
+
+        with self.assertRaises(ValidationError):
+            ExperimentConfig.model_validate(
+                {
+                    "dataset": {"path": "datasets/tiny"},
+                    "classes": ["car"],
+                    "preprocess": {"image_size": 32},
+                    "model": {
+                        "key": "m",
+                        "backend": "torchvision",
+                        "model_name_or_path": "fasterrcnn_resnet50_fpn",
+                    },
+                    "train": {
+                        "run_key": "r",
+                        "output_dir": "runs/r",
+                        "optimizer": {"name": "sgd"},
+                    },
+                    "eval": {},
+                }
+            )
+
+        with self.assertRaises(ValidationError):
+            TuningConfig(study_name="s", output_dir=Path("runs/hpo"), trial_epochs=0)
 
     def test_relative_model_preprocess_augmentation_and_search_space_files_load(self):
         with TemporaryDirectory() as tmp:
@@ -195,7 +238,6 @@ class ExperimentConfigTest(unittest.TestCase):
 
     def test_rejects_removed_train_fields(self):
         removed_fields = {
-            "gradient_accumulation_steps": 2,
             "effective_batch_size": 16,
             "per_device_batch_size": 8,
             "eval_metric": "map_50_95",

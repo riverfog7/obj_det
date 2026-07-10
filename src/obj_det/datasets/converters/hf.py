@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -10,6 +11,9 @@ from datasets import Dataset, DatasetDict, Features, Image, List, Value
 from obj_det.datasets.models import ImageRecord
 from obj_det.datasets.models.source_config import SourceDatasetConfig
 from obj_det.datasets.sources import source_from_config
+
+
+logger = logging.getLogger(__name__)
 
 
 HF_FEATURES = Features(
@@ -84,6 +88,14 @@ def convert_config_to_dataset_dict(
                 {column: [] for column in HF_FEATURES},
                 features=HF_FEATURES,
             )
+
+        logger.info(
+            "Dataset import stats: dataset=%s source_split=%s output_split=%s stats=%s",
+            source.key,
+            split,
+            output_split,
+            source.import_stats_snapshot(split),
+        )
 
     return datasets
 

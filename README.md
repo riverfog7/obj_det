@@ -283,6 +283,12 @@ validated `ExperimentConfig` objects. `configs/experiments/` remains supported
 for direct/debug single-run configs, but plans are the preferred scalable source
 of truth.
 
+The controlled recipe fixes AdamW, a one-epoch warmup followed by a 50-epoch
+cosine schedule, checkpointing, and early stopping for every backend. HPO uses
+`configs/search_spaces/global_learning_rate.yaml`: eight independent TPE trials
+per model tune only canonical `learning_rate` for 10 epochs while retaining the
+50-epoch scheduler horizon. Backend defaults contain runtime sizing only.
+
 ```python
 from obj_det.models.plan import (
     ExperimentPlanRunner,
@@ -357,7 +363,7 @@ configs/recipes/         # protocol defaults, preprocess, augmentation, HPO/fina
 configs/model_groups/    # reusable model lists
 configs/plans/           # preferred scalable experiment entrypoints
 configs/models/          # backend/model identity
-configs/search_spaces/   # Optuna parameter spaces
+configs/search_spaces/   # shared Optuna learning-rate search space
 configs/experiments/     # optional direct/debug resolved configs
 ```
 

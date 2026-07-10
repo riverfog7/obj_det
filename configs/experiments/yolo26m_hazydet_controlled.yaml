@@ -6,7 +6,7 @@ dataset:
 
 model_file: ../models/yolo26m.yaml
 preprocess_file: ../preprocess/640.yaml
-augmentation_file: ../augmentations/basic.yaml
+augmentation_file: ../augmentations/basic_light.yaml
 
 classes:
   - person
@@ -23,9 +23,10 @@ train:
   protocol: controlled
   max_epochs: 50
   batch_size: 8
+  gradient_accumulation_steps: 1
   logging_steps: 100
   eval_strategy:
-    enabled: false
+    enabled: true
     every_epochs: 1
   loader:
     num_workers: 16
@@ -34,27 +35,64 @@ train:
     prefetch_factor: 4
     predecode_images: false
   seed: 0
+  optimizer:
+    name: adamw
+    weight_decay: 1.0e-4
+    beta1: 0.9
+    beta2: 0.999
+    epsilon: 1.0e-8
+  scheduler:
+    name: warmup_cosine
+    warmup_epochs: 1
+    total_epochs: 50
+    min_lr_ratio: 0.01
+  checkpoint:
+    save_every_epochs: 1
+    save_best: true
+    save_last: true
+    keep_all_epoch_checkpoints: true
+  early_stopping:
+    enabled: true
+    metric: map_50_95
+    mode: max
+    min_epochs: 10
+    patience: 8
+    min_delta: 0.001
+    restore_best: true
   hparams:
-    lr0: 0.003
-    weight_decay: 0.0005
-    momentum: 0.937
-    warmup_epochs: 3
-    cos_lr: true
+    learning_rate: 0.003
 
 eval:
   batch_size: 8
   conf_threshold: 0.001
   iou_threshold: 0.7
+  max_detections_per_image: 300
+  compute_per_class: true
+  compute_per_condition: true
+  compute_per_domain: true
+  compute_per_size: true
 
 predict:
   batch_size: 8
   conf_threshold: 0.001
   iou_threshold: 0.7
+  max_detections_per_image: 300
 
 tuning:
   study_name: yolo26m_hazydet_controlled
-  n_trials: 10
+  direction: maximize
+  n_trials: 8
+  trial_epochs: 10
+  sampler: tpe
+  sampler_params:
+    n_startup_trials: 3
+  seed: 0
+  pruner: none
   objective_metric: map_50_95
+  save_strategy: final_only
+  early_stopping: false
+  catch_trial_errors: false
+  detailed_eval: false
   output_dir: runs/hpo/yolo26m_hazydet_controlled
 
 logging:
@@ -62,7 +100,7 @@ logging:
   wandb:
     project: yolo26m_hazydet_controlled
 
-search_space_file: ../search_spaces/yolo_controlled.yaml
+search_space_file: ../search_spaces/global_learning_rate.yaml
 
 final:
   seeds: [0, 1, 2]

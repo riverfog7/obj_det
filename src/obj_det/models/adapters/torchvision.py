@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from typing import Iterator
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Callable, Iterator, Literal
 
 import torch
 from datasets import Dataset
@@ -30,9 +32,72 @@ from obj_det.models.data.transforms import bbox_to_original, build_detection_tra
 from obj_det.models.logging.base import BaseExperimentLogger
 from obj_det.models.logging.trainer_callback import make_transformers_logging_callback
 from obj_det.models.schemas.artifact import ModelArtifact
-from obj_det.models.schemas.config import PredictConfig, TrainConfig
+from obj_det.models.schemas.config import EvalConfig, PredictConfig, TrainConfig
 from obj_det.models.schemas.prediction import PredictionObject, PredictionRecord
+from obj_det.models.training import (
+    CheckpointState,
+    build_adamw_param_groups,
+    build_warmup_cosine_scheduler,
+    optimizer_steps_per_epoch,
+    require_metric,
+    require_single_process,
+)
 from obj_det.models.utils.repro import set_seed
+
+
+@dataclass(frozen=True)
+class _TorchvisionModelSpec:
+    model_name: str
+    builder: Callable[..., torch.nn.Module]
+    weights_cls: type
+    head_kind: Literal["roi", "anchor"]
+    label_offset: int
+    threshold_parent: tuple[str, ...]
+
+    def model_num_classes(self, canonical_num_classes: int) -> int:
+        return canonical_num_classes + self.label_offset
+
+    def training_label(self, canonical_label: int) -> int:
+        return canonical_label + self.label_offset
+
+    def canonical_label(self, model_label: int) -> int:
+        return model_label - self.label_offset
+
+
+_TORCHVISION_MODEL_SPECS = {
+    "fasterrcnn_resnet50_fpn": _TorchvisionModelSpec(
+        model_name="fasterrcnn_resnet50_fpn",
+        builder=fasterrcnn_resnet50_fpn,
+        weights_cls=FasterRCNN_ResNet50_FPN_Weights,
+        head_kind="roi",
+        label_offset=1,
+        threshold_parent=("roi_heads",),
+    ),
+    "maskrcnn_resnet50_fpn": _TorchvisionModelSpec(
+        model_name="maskrcnn_resnet50_fpn",
+        builder=maskrcnn_resnet50_fpn,
+        weights_cls=MaskRCNN_ResNet50_FPN_Weights,
+        head_kind="roi",
+        label_offset=1,
+        threshold_parent=("roi_heads",),
+    ),
+    "retinanet_resnet50_fpn": _TorchvisionModelSpec(
+        model_name="retinanet_resnet50_fpn",
+        builder=retinanet_resnet50_fpn,
+        weights_cls=RetinaNet_ResNet50_FPN_Weights,
+        head_kind="anchor",
+        label_offset=0,
+        threshold_parent=(),
+    ),
+    "fcos_resnet50_fpn": _TorchvisionModelSpec(
+        model_name="fcos_resnet50_fpn",
+        builder=fcos_resnet50_fpn,
+        weights_cls=FCOS_ResNet50_FPN_Weights,
+        head_kind="anchor",
+        label_offset=0,
+        threshold_parent=(),
+    ),
+}
 
 
 class TorchvisionDetectionAdapter(BaseModelAdapter):
@@ -42,40 +107,121 @@ class TorchvisionDetectionAdapter(BaseModelAdapter):
         val_ds: Dataset,
         train_cfg: TrainConfig,
         *,
+        epoch_eval_cfg: EvalConfig | None = None,
         logger: BaseExperimentLogger | None = None,
         log_prefix: str = "train",
     ) -> ModelArtifact:
+        if train_cfg.protocol in {"controlled", "equal_hpo"}:
+            require_single_process(context="Controlled TorchVision training")
         set_seed(train_cfg.seed)
         train_cfg.output_dir.mkdir(parents=True, exist_ok=True)
 
-        model = self._build_model(num_classes=len(train_cfg.classes) + 1, image_size=train_cfg.preprocess.image_size)
+        spec = self._model_spec()
+        weights = self._resolve_weights(spec)
+        pretraining_meta = self._pretraining_metadata(spec, weights)
+        model = self._build_model(
+            spec=spec,
+            num_classes=spec.model_num_classes(len(train_cfg.classes)),
+            image_size=train_cfg.preprocess.image_size,
+            weights=weights,
+        )
         parser = HFDetectionRowParser(classes=train_cfg.classes, label_mode=train_cfg.label_mode, decode_backend=train_cfg.loader.decode_backend)
         transform = build_detection_transform(train_cfg.preprocess, train_cfg.augmentation, seed=train_cfg.seed)
         eval_transform = build_detection_transform(train_cfg.preprocess)
         train_source = DetectionSampleSource(train_ds, parser, predecode_images=train_cfg.loader.predecode_images)
         val_source = DetectionSampleSource(val_ds, parser, predecode_images=train_cfg.loader.predecode_images)
+        checkpoint_state = CheckpointState(train_cfg.output_dir)
+        shared_protocol = train_cfg.protocol in {"controlled", "equal_hpo"}
+
+        def epoch_callback(protocol_trainer, epoch: int) -> bool:
+            max_epochs = int(train_cfg.max_epochs or 1)
+            should_save = (
+                epoch % train_cfg.checkpoint.save_every_epochs == 0
+                or epoch >= max_epochs
+                or epoch_eval_cfg is not None
+            )
+            if not should_save:
+                return False
+            checkpoint_path = self._save_training_checkpoint(
+                protocol_trainer,
+                train_cfg=train_cfg,
+                spec=spec,
+                pretraining_meta=pretraining_meta,
+                epoch=epoch,
+            )
+            metric = None
+            if epoch_eval_cfg is not None:
+                result = self.evaluate(
+                    val_ds,
+                    self._artifact_for_checkpoint(train_cfg, checkpoint_path, pretraining_meta),
+                    epoch_eval_cfg,
+                    logger=logger,
+                    log_prefix="val/epoch",
+                )
+                metric = require_metric(
+                    result.metrics,
+                    train_cfg.early_stopping.metric,
+                    context="early-stopping",
+                )
+            should_stop = checkpoint_state.record_epoch(
+                epoch=epoch,
+                checkpoint_path=checkpoint_path,
+                metric=metric,
+                early_stopping_cfg=train_cfg.early_stopping,
+            )
+            if logger is not None:
+                logger.log_artifact(checkpoint_path, name=f"checkpoint_epoch_{epoch:03d}")
+                if metric is not None:
+                    logger.log_metrics(
+                        {
+                            "early_stopping/bad_epochs": checkpoint_state.early_stopping.bad_epochs,
+                            "early_stopping/best_metric": checkpoint_state.early_stopping.best_metric,
+                            "early_stopping/best_epoch": checkpoint_state.early_stopping.best_epoch,
+                        },
+                        step=protocol_trainer.state.global_step,
+                    )
+            return should_stop
 
         trainer = _TorchvisionTrainer(
             model=model,
             args=self._training_args(train_cfg),
-            train_dataset=_TorchvisionTrainerDataset(train_source, transform),
-            eval_dataset=_TorchvisionTrainerDataset(val_source, eval_transform),
+            train_dataset=_TorchvisionTrainerDataset(train_source, transform, spec),
+            eval_dataset=_TorchvisionTrainerDataset(val_source, eval_transform, spec),
             data_collator=_torchvision_collate,
             train_cfg=train_cfg,
+            epoch_callback=epoch_callback if shared_protocol else None,
             callbacks=[make_transformers_logging_callback(TrainerCallback, logger, log_prefix)] if logger else None,
         )
         trainer.train()
 
-        checkpoint_path = train_cfg.output_dir / "checkpoint.pt"
-        torch.save(
-            {
-                "model_state_dict": trainer.model.state_dict(),
-                "classes": train_cfg.classes,
-                "label_mode": train_cfg.label_mode,
-                "model_name_or_path": str(self.cfg.model_name_or_path),
-            },
-            checkpoint_path,
+        checkpoint_path = checkpoint_state.best_checkpoint if train_cfg.early_stopping.restore_best else None
+        if checkpoint_path is None:
+            checkpoint_path = checkpoint_state.last_checkpoint
+        if checkpoint_path is None:
+            epoch = int(round(float(trainer.state.epoch or train_cfg.max_epochs or 1)))
+            checkpoint_path = self._save_training_checkpoint(
+                trainer,
+                train_cfg=train_cfg,
+                spec=spec,
+                pretraining_meta=pretraining_meta,
+                epoch=epoch,
+            )
+            checkpoint_state.record_epoch(
+                epoch=epoch,
+                checkpoint_path=checkpoint_path,
+                metric=None,
+                early_stopping_cfg=train_cfg.early_stopping,
+            )
+        selected_is_best = (
+            checkpoint_state.best_checkpoint is not None
+            and checkpoint_path == checkpoint_state.best_checkpoint
         )
+        optimizer_steps = int(trainer.state.global_step)
+        if logger is not None:
+            logger.log_metrics(
+                {f"{log_prefix}/optimizer_steps": optimizer_steps},
+                step=optimizer_steps,
+            )
 
         train_loss = None
         if trainer.state.log_history:
@@ -83,6 +229,27 @@ class TorchvisionDetectionAdapter(BaseModelAdapter):
                 if "train_loss" in row:
                     train_loss = float(row["train_loss"])
                     break
+        if shared_protocol:
+            optimizer_meta = {
+                **train_cfg.optimizer.model_dump(mode="json"),
+                "learning_rate": float(
+                    train_cfg.hparams.get("learning_rate", train_cfg.hparams.get("lr", 0.001))
+                ),
+            }
+            scheduler_meta = train_cfg.scheduler.model_dump(mode="json")
+        else:
+            optimizer_meta = {
+                "name": str(train_cfg.hparams.get("optimizer", "sgd")).lower(),
+                "learning_rate": float(
+                    train_cfg.hparams.get("learning_rate", train_cfg.hparams.get("lr", 0.001))
+                ),
+                "weight_decay": float(train_cfg.hparams.get("weight_decay", 0.0005)),
+                "momentum": float(train_cfg.hparams.get("momentum", 0.9)),
+            }
+            scheduler_meta = {
+                "name": train_cfg.hparams.get("lr_scheduler_type", "linear"),
+                "warmup_ratio": float(train_cfg.hparams.get("warmup_ratio", 0.0)),
+            }
 
         return ModelArtifact(
             model_key=self.key,
@@ -92,9 +259,27 @@ class TorchvisionDetectionAdapter(BaseModelAdapter):
             label_mode=train_cfg.label_mode,
             artifact_path=train_cfg.output_dir,
             checkpoint_path=checkpoint_path,
-            best_metric_name="train_loss" if train_loss is not None else None,
-            best_metric_value=train_loss,
-            meta={"trainer_global_step": trainer.state.global_step},
+            best_metric_name=(
+                train_cfg.early_stopping.metric
+                if checkpoint_state.best_epoch is not None
+                else ("train_loss" if train_loss is not None else None)
+            ),
+            best_metric_value=(
+                checkpoint_state.best_metric
+                if checkpoint_state.best_epoch is not None
+                else train_loss
+            ),
+            meta={
+                "trainer_global_step": trainer.state.global_step,
+                "optimizer_steps": optimizer_steps,
+                "checkpoint_selection": "best_validation" if selected_is_best else "last",
+                "model_spec": spec.model_name,
+                "label_offset": spec.label_offset,
+                "optimizer": optimizer_meta,
+                "scheduler": scheduler_meta,
+                **checkpoint_state.artifact_meta(),
+                **pretraining_meta,
+            },
         )
 
     def predict(
@@ -107,7 +292,14 @@ class TorchvisionDetectionAdapter(BaseModelAdapter):
             raise ValueError("Torchvision artifact is missing checkpoint_path")
 
         device = self._device(predict_cfg.backend_params)
-        model = self._build_model(num_classes=len(predict_cfg.classes) + 1, image_size=predict_cfg.preprocess.image_size).to(device)
+        spec = self._model_spec()
+        model = self._build_model(
+            spec=spec,
+            num_classes=spec.model_num_classes(len(predict_cfg.classes)),
+            image_size=predict_cfg.preprocess.image_size,
+            weights=None,
+            predict_cfg=predict_cfg,
+        ).to(device)
         checkpoint = torch.load(artifact.checkpoint_path, map_location=device)
         model.load_state_dict(checkpoint["model_state_dict"])
         model.eval()
@@ -133,7 +325,7 @@ class TorchvisionDetectionAdapter(BaseModelAdapter):
                     if score_value < predict_cfg.conf_threshold:
                         continue
                     raw_label = int(label.detach().cpu())
-                    class_idx = raw_label - 1
+                    class_idx = spec.canonical_label(raw_label)
                     if class_idx < 0 or class_idx >= len(predict_cfg.classes):
                         continue
                     bbox = BBox.from_xyxy([float(v) for v in box.detach().cpu().tolist()])
@@ -160,61 +352,157 @@ class TorchvisionDetectionAdapter(BaseModelAdapter):
                     predictions=predictions,
                 )
 
-    def _build_model(self, *, num_classes: int, image_size: int):
+    def _model_spec(self) -> _TorchvisionModelSpec:
         model_name = str(self.cfg.model_name_or_path)
+        try:
+            return _TORCHVISION_MODEL_SPECS[model_name]
+        except KeyError as exc:
+            supported = ", ".join(_TORCHVISION_MODEL_SPECS)
+            raise ValueError(f"Torchvision backend supports: {supported}") from exc
+
+    def _build_model(
+        self,
+        *,
+        num_classes: int,
+        image_size: int,
+        spec: _TorchvisionModelSpec | None = None,
+        weights=None,
+        predict_cfg: PredictConfig | None = None,
+    ):
+        spec = spec or self._model_spec()
         min_size = int(self.cfg.params.get("min_size", image_size))
         max_size = int(self.cfg.params.get("max_size", image_size))
 
-        if model_name == "fasterrcnn_resnet50_fpn":
-            model = fasterrcnn_resnet50_fpn(
-                weights=self._weights(FasterRCNN_ResNet50_FPN_Weights),
-                weights_backbone=None,
-                min_size=min_size,
-                max_size=max_size,
-            )
+        model = spec.builder(
+            weights=weights,
+            weights_backbone=None,
+            min_size=min_size,
+            max_size=max_size,
+        )
+        if spec.head_kind == "roi":
             self._replace_roi_box_predictor(model, num_classes)
-            return model
-
-        if model_name == "retinanet_resnet50_fpn":
-            model = retinanet_resnet50_fpn(
-                weights=self._weights(RetinaNet_ResNet50_FPN_Weights),
-                weights_backbone=None,
-                min_size=min_size,
-                max_size=max_size,
-            )
+            if spec.model_name == "maskrcnn_resnet50_fpn":
+                self._disable_mask_head(model)
+        else:
             self._replace_anchor_classification_head(model, num_classes)
-            return model
 
-        if model_name == "fcos_resnet50_fpn":
-            model = fcos_resnet50_fpn(
-                weights=self._weights(FCOS_ResNet50_FPN_Weights),
-                weights_backbone=None,
-                min_size=min_size,
-                max_size=max_size,
+        if predict_cfg is not None:
+            self._apply_predict_config(model, spec, predict_cfg)
+        return model
+
+    def _resolve_weights(self, spec: _TorchvisionModelSpec):
+        configured = self.cfg.params["weights"] if "weights" in self.cfg.params else self.cfg.weights
+        if configured is None:
+            return None
+        if isinstance(configured, spec.weights_cls):
+            return configured
+
+        value = str(configured).strip()
+        if value.lower() in {"none", "null", "false"}:
+            return None
+        if value.lower() == "default":
+            return spec.weights_cls.DEFAULT
+
+        member_name = value.rsplit(".", 1)[-1]
+        member = getattr(spec.weights_cls, member_name, None)
+        if member is None:
+            choices = ", ".join(member.name for member in spec.weights_cls)
+            raise ValueError(
+                f"Unknown weights {value!r} for {spec.model_name}; use 'default', 'none', or one of: {choices}"
             )
-            self._replace_anchor_classification_head(model, num_classes)
-            return model
+        return member
 
-        if model_name == "maskrcnn_resnet50_fpn":
-            model = maskrcnn_resnet50_fpn(
-                weights=self._weights(MaskRCNN_ResNet50_FPN_Weights),
-                weights_backbone=None,
-                min_size=min_size,
-                max_size=max_size,
-            )
-            self._replace_roi_box_predictor(model, num_classes)
-            self._disable_mask_head(model)
-            return model
+    def _pretraining_metadata(self, spec: _TorchvisionModelSpec, weights) -> dict:
+        configured = self.cfg.params["weights"] if "weights" in self.cfg.params else self.cfg.weights
+        if weights is None:
+            return {
+                "pretrained": False,
+                "pretrained_config": None if configured is None else str(configured),
+                "pretrained_source": None,
+            }
 
-        raise ValueError(
-            "Torchvision backend supports: "
-            "fasterrcnn_resnet50_fpn, retinanet_resnet50_fpn, "
-            "fcos_resnet50_fpn, maskrcnn_resnet50_fpn"
+        value = getattr(weights, "value", None)
+        url = getattr(weights, "url", None) or getattr(value, "url", None)
+        name = getattr(weights, "name", str(weights))
+        return {
+            "pretrained": True,
+            "pretrained_config": None if configured is None else str(configured),
+            "pretrained_weights": name,
+            "pretrained_source": url or f"torchvision:{spec.model_name}:{name}",
+        }
+
+    def _save_training_checkpoint(
+        self,
+        trainer,
+        *,
+        train_cfg: TrainConfig,
+        spec: _TorchvisionModelSpec,
+        pretraining_meta: dict,
+        epoch: int,
+    ) -> Path:
+        checkpoint_dir = train_cfg.output_dir / "checkpoints"
+        checkpoint_dir.mkdir(parents=True, exist_ok=True)
+        checkpoint_path = checkpoint_dir / f"epoch_{epoch:03d}.pt"
+        scaler = getattr(getattr(trainer, "accelerator", None), "scaler", None)
+        payload = {
+            "model_state_dict": trainer.model.state_dict(),
+            "optimizer_state_dict": trainer.optimizer.state_dict() if trainer.optimizer is not None else None,
+            "scheduler_state_dict": trainer.lr_scheduler.state_dict() if trainer.lr_scheduler is not None else None,
+            "scaler_state_dict": scaler.state_dict() if scaler is not None else None,
+            "epoch": epoch,
+            "global_optimizer_step": trainer.state.global_step,
+            "classes": train_cfg.classes,
+            "label_mode": train_cfg.label_mode,
+            "model_name_or_path": str(self.cfg.model_name_or_path),
+            "model_spec": spec.model_name,
+            "label_offset": spec.label_offset,
+            "pretraining": pretraining_meta,
+            "resolved_train_config": train_cfg.model_dump(mode="json"),
+            "rng_state": torch.get_rng_state(),
+        }
+        if torch.cuda.is_available():
+            payload["cuda_rng_state"] = torch.cuda.get_rng_state_all()
+        torch.save(payload, checkpoint_path)
+        return checkpoint_path
+
+    def _artifact_for_checkpoint(
+        self,
+        train_cfg: TrainConfig,
+        checkpoint_path: Path,
+        pretraining_meta: dict,
+    ) -> ModelArtifact:
+        return ModelArtifact(
+            model_key=self.key,
+            backend=self.backend,
+            run_key=train_cfg.run_key,
+            classes=train_cfg.classes,
+            label_mode=train_cfg.label_mode,
+            artifact_path=train_cfg.output_dir,
+            checkpoint_path=checkpoint_path,
+            meta=pretraining_meta,
         )
 
-    def _weights(self, weights_cls):
-        weights_param = self.cfg.params.get("weights") or self.cfg.weights
-        return weights_cls.DEFAULT if str(weights_param).lower() == "default" else None
+    def _apply_predict_config(
+        self,
+        model,
+        spec: _TorchvisionModelSpec,
+        predict_cfg: PredictConfig,
+    ) -> None:
+        threshold_owner = model
+        for attribute in spec.threshold_parent:
+            threshold_owner = getattr(threshold_owner, attribute)
+
+        threshold_owner.score_thresh = float(predict_cfg.conf_threshold)
+        threshold_owner.nms_thresh = float(predict_cfg.iou_threshold)
+
+        max_detections = getattr(predict_cfg, "max_detections_per_image", None)
+        if max_detections is None:
+            max_detections = predict_cfg.backend_params.get("max_detections_per_image")
+        if max_detections is not None:
+            max_detections = int(max_detections)
+            if max_detections <= 0:
+                raise ValueError("max_detections_per_image must be positive")
+            threshold_owner.detections_per_img = max_detections
 
     def _replace_roi_box_predictor(self, model, num_classes: int) -> None:
         in_features = model.roi_heads.box_predictor.cls_score.in_features
@@ -257,22 +545,36 @@ class TorchvisionDetectionAdapter(BaseModelAdapter):
         if loader.num_workers > 0 and loader.prefetch_factor is not None:
             loader_args["dataloader_prefetch_factor"] = loader.prefetch_factor
 
+        shared_protocol = train_cfg.protocol in {"controlled", "equal_hpo"}
+        if shared_protocol:
+            weight_decay = float(train_cfg.optimizer.weight_decay)
+            warmup_ratio = 0.0
+            scheduler_type = "constant"
+            eval_strategy = "no"
+            save_strategy = "no"
+        else:
+            weight_decay = float(hparams.get("weight_decay", 0.0005))
+            warmup_ratio = float(hparams.get("warmup_ratio", 0.0))
+            scheduler_type = hparams.get("lr_scheduler_type", "linear")
+            eval_strategy = self._eval_strategy(train_cfg)
+            save_strategy = "epoch" if max_steps < 0 else "no"
+
         return TrainingArguments(
             output_dir=str(train_cfg.output_dir),
             num_train_epochs=epochs,
             max_steps=max_steps,
             per_device_train_batch_size=train_cfg.batch_size,
             per_device_eval_batch_size=train_cfg.batch_size,
-            gradient_accumulation_steps=1,
+            gradient_accumulation_steps=train_cfg.gradient_accumulation_steps,
             learning_rate=float(hparams.get("learning_rate", hparams.get("lr", 0.001))),
-            weight_decay=float(hparams.get("weight_decay", 0.0005)),
-            warmup_ratio=float(hparams.get("warmup_ratio", 0.0)),
-            lr_scheduler_type=hparams.get("lr_scheduler_type", "linear"),
+            weight_decay=weight_decay,
+            warmup_ratio=warmup_ratio,
+            lr_scheduler_type=scheduler_type,
             max_grad_norm=float(hparams.get("max_grad_norm", 1.0)),
             seed=train_cfg.seed,
             fp16=bool(train_cfg.amp and torch.cuda.is_available()),
-            eval_strategy=self._eval_strategy(train_cfg),
-            save_strategy="epoch" if max_steps < 0 else "no",
+            eval_strategy=eval_strategy,
+            save_strategy=save_strategy,
             logging_strategy="steps",
             logging_steps=train_cfg.logging_steps,
             report_to=[],
@@ -297,9 +599,11 @@ class TorchvisionDetectionAdapter(BaseModelAdapter):
 
 
 class _TorchvisionTrainer(Trainer):
-    def __init__(self, *args, train_cfg: TrainConfig, **kwargs):
+    def __init__(self, *args, train_cfg: TrainConfig, epoch_callback=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.train_cfg = train_cfg
+        self.epoch_callback = epoch_callback
+        self.protocol_last_epoch = 0
 
     def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
         loss_dict = model(inputs["images"], inputs["targets"])
@@ -315,31 +619,93 @@ class _TorchvisionTrainer(Trainer):
         model.train(was_training)
         return loss, None, None
 
-    def create_optimizer(self):
+    def _maybe_log_save_evaluate(self, *args, **kwargs):
+        super()._maybe_log_save_evaluate(*args, **kwargs)
+        if self.epoch_callback is None or self.state.epoch is None:
+            return
+        epoch = int(round(float(self.state.epoch)))
+        if epoch <= self.protocol_last_epoch or abs(float(self.state.epoch) - epoch) > 1.0e-6:
+            return
+        self.protocol_last_epoch = epoch
+        if self.epoch_callback(self, epoch):
+            self.control.should_training_stop = True
+
+    def create_optimizer(self, model=None):
         if self.optimizer is not None:
             return self.optimizer
 
-        params = [p for p in self.model.parameters() if p.requires_grad]
+        model = self.model if model is None else model
         hparams = self.train_cfg.hparams
-        optimizer_name = str(hparams.get("optimizer", "sgd")).lower()
         lr = float(hparams.get("learning_rate", hparams.get("lr", 0.001)))
-        weight_decay = float(hparams.get("weight_decay", 0.0005))
+        if self.train_cfg.protocol not in {"controlled", "equal_hpo"}:
+            parameters = [parameter for parameter in model.parameters() if parameter.requires_grad]
+            optimizer_name = str(hparams.get("optimizer", "sgd")).lower()
+            weight_decay = float(hparams.get("weight_decay", 0.0005))
+            if optimizer_name == "adamw":
+                self.optimizer = torch.optim.AdamW(
+                    parameters,
+                    lr=lr,
+                    weight_decay=weight_decay,
+                )
+            elif optimizer_name == "sgd":
+                self.optimizer = torch.optim.SGD(
+                    parameters,
+                    lr=lr,
+                    momentum=float(hparams.get("momentum", 0.9)),
+                    weight_decay=weight_decay,
+                )
+            else:
+                raise ValueError(f"Unsupported TorchVision optimizer: {optimizer_name}")
+            return self.optimizer
 
-        if optimizer_name == "adamw":
-            self.optimizer = torch.optim.AdamW(params, lr=lr, weight_decay=weight_decay)
-        elif optimizer_name == "sgd":
-            momentum = float(hparams.get("momentum", 0.9))
-            self.optimizer = torch.optim.SGD(params, lr=lr, momentum=momentum, weight_decay=weight_decay)
-        else:
-            raise ValueError(f"Unsupported TorchVision optimizer: {optimizer_name}")
+        cfg = self.train_cfg.optimizer
+        params = build_adamw_param_groups(model, weight_decay=cfg.weight_decay)
+        self.optimizer = torch.optim.AdamW(
+            params,
+            lr=lr,
+            betas=(cfg.beta1, cfg.beta2),
+            eps=cfg.epsilon,
+        )
 
         return self.optimizer
 
+    def create_scheduler(self, num_training_steps: int, optimizer=None):
+        if self.train_cfg.protocol not in {"controlled", "equal_hpo"}:
+            return super().create_scheduler(num_training_steps, optimizer)
+        if self.lr_scheduler is not None:
+            return self.lr_scheduler
+
+        optimizer = optimizer or self.optimizer
+        if optimizer is None:
+            raise ValueError("TorchVision scheduler requires an initialized optimizer")
+
+        num_batches = len(self.get_train_dataloader())
+        steps_per_epoch = optimizer_steps_per_epoch(
+            num_batches,
+            self.train_cfg.gradient_accumulation_steps,
+        )
+        cfg = self.train_cfg.scheduler
+        warmup_steps = int(round(cfg.warmup_epochs * steps_per_epoch))
+        total_steps = int(cfg.total_epochs * steps_per_epoch)
+        self.lr_scheduler = build_warmup_cosine_scheduler(
+            optimizer,
+            warmup_steps=warmup_steps,
+            total_steps=total_steps,
+            min_lr_ratio=cfg.min_lr_ratio,
+        )
+        return self.lr_scheduler
+
 
 class _TorchvisionTrainerDataset(torch.utils.data.Dataset):
-    def __init__(self, source: DetectionSampleSource, transform):
+    def __init__(
+        self,
+        source: DetectionSampleSource,
+        transform,
+        spec: _TorchvisionModelSpec | None = None,
+    ):
         self.source = source
         self.transform = transform
+        self.spec = spec or _TORCHVISION_MODEL_SPECS["fasterrcnn_resnet50_fpn"]
 
     def __len__(self) -> int:
         return len(self.source)
@@ -347,7 +713,7 @@ class _TorchvisionTrainerDataset(torch.utils.data.Dataset):
     def __getitem__(self, idx: int):
         seed_worker_transform(self.transform)
         sample = self.transform(self.source[idx])
-        return {"image": _image_tensor(sample), "target": _target_dict(sample)}
+        return {"image": _image_tensor(sample), "target": _target_dict(sample, self.spec)}
 
 
 def _image_tensor(sample: DetectionSample) -> torch.Tensor:
@@ -357,9 +723,9 @@ def _image_tensor(sample: DetectionSample) -> torch.Tensor:
     return torch.from_numpy(array).permute(2, 0, 1).contiguous()
 
 
-def _target_dict(sample: DetectionSample) -> dict[str, torch.Tensor]:
+def _target_dict(sample: DetectionSample, spec: _TorchvisionModelSpec) -> dict[str, torch.Tensor]:
     boxes = [xywh_to_xyxy(target.bbox_xywh) for target in sample.targets]
-    labels = [target.label_id + 1 for target in sample.targets]
+    labels = [spec.training_label(target.label_id) for target in sample.targets]
     area = [area_xywh(target.bbox_xywh) for target in sample.targets]
     iscrowd = [int(target.iscrowd) for target in sample.targets]
 

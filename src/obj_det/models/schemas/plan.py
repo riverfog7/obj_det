@@ -41,6 +41,7 @@ class RecipeConfig(ModelSchema):
     protocol: ProtocolName
     preprocess_file: Path
     augmentation_file: Path | None = None
+    search_space_file: Path | None = None
     train: dict[str, Any] = Field(default_factory=dict)
     eval: dict[str, Any] = Field(default_factory=dict)
     predict: dict[str, Any] = Field(default_factory=dict)

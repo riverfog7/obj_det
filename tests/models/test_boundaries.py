@@ -23,7 +23,7 @@ class BoundaryTest(unittest.TestCase):
         self.assertIn("eval_transform = build_detection_transform(train_cfg.preprocess)", hf_text)
         self.assertIn("val_data = HFTrainerDetectionDataset(val_source, eval_transform)", hf_text)
         self.assertIn("eval_transform = build_detection_transform(train_cfg.preprocess)", tv_text)
-        self.assertIn("eval_dataset=_TorchvisionTrainerDataset(val_source, eval_transform)", tv_text)
+        self.assertIn("eval_dataset=_TorchvisionTrainerDataset(val_source, eval_transform, spec)", tv_text)
 
     def test_ultralytics_train_time_eval_is_warn_only(self):
         text = pathlib.Path("src/obj_det/models/adapters/ultralytics.py").read_text()

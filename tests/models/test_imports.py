@@ -4,14 +4,18 @@ import unittest
 
 from obj_det.models import (
     AugmentationConfig,
+    CheckpointConfig,
     DataLoaderConfig,
+    EarlyStoppingConfig,
     EvalConfig,
     EvalStrategyConfig,
     ExperimentConfig,
     ExperimentRunner,
     ModelConfig,
+    OptimizerConfig,
     PreprocessConfig,
     SearchSpace,
+    SchedulerConfig,
     TrainConfig,
 )
 from obj_det.models.adapters.factory import model_adapter_from_config
@@ -47,6 +51,10 @@ class ImportTest(unittest.TestCase):
         self.assertEqual(DataLoaderConfig(num_workers=2).num_workers, 2)
         self.assertEqual(DataLoaderConfig(decode_backend="opencv", profile_every_n=10).decode_backend, "opencv")
         self.assertEqual(AugmentationConfig(policy="basic").policy, "basic")
+        self.assertEqual(OptimizerConfig().name, "adamw")
+        self.assertEqual(SchedulerConfig().total_epochs, 50)
+        self.assertTrue(CheckpointConfig().keep_all_epoch_checkpoints)
+        self.assertEqual(EarlyStoppingConfig().patience, 8)
         self.assertEqual(SearchSpace().params, {})
         self.assertEqual(TrainConfig(run_key="r", classes=["car"], output_dir="/tmp/x", preprocess=preprocess).label_mode, "meta")
         self.assertEqual(

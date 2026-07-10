@@ -52,17 +52,19 @@ class ExperimentPlanTest(unittest.TestCase):
         self.assertEqual(yolo.train.batch_size, 16)
         self.assertEqual(yolo.eval.batch_size, 4)
         self.assertEqual(yolo.predict.batch_size, 4)
-        self.assertEqual(yolo.train.hparams["optimizer"], "SGD")
-        self.assertIn("lr0", yolo.search_space.params)
+        self.assertEqual(yolo.train.optimizer.name, "adamw")
+        self.assertEqual(yolo.train.scheduler.total_epochs, 50)
+        self.assertEqual(set(yolo.search_space.params), {"learning_rate"})
 
         self.assertEqual(tv.model.backend, "torchvision")
         self.assertEqual(tv.train.batch_size, 2)
-        self.assertEqual(tv.train.hparams["optimizer"], "sgd")
+        self.assertEqual(tv.train.optimizer, yolo.train.optimizer)
+        self.assertEqual(tv.train.scheduler, yolo.train.scheduler)
         self.assertEqual(tv.train.classes, ["car", "person"])
         self.assertEqual(tv.train.label_mode, "meta")
         self.assertEqual(tv.train.preprocess.image_size, 32)
         self.assertEqual(tv.train.augmentation.color_jitter_p, 0.5)
-        self.assertIn("learning_rate", tv.search_space.params)
+        self.assertEqual(set(tv.search_space.params), {"learning_rate"})
 
     def test_plan_can_filter_model_keys(self):
         with TemporaryDirectory() as tmp:
@@ -90,7 +92,47 @@ class ExperimentPlanTest(unittest.TestCase):
         self.assertEqual(len(paths), 1)
         self.assertEqual(cfg.model.key, "yolo")
         self.assertIsNotNone(cfg.search_space)
-        self.assertEqual(cfg.train.hparams["lrf"], 0.01)
+        self.assertEqual(cfg.train.optimizer.name, "adamw")
+        self.assertEqual(cfg.train.scheduler.total_epochs, 50)
+        self.assertEqual(set(cfg.search_space.params), {"learning_rate"})
+
+    def test_recipe_search_space_rejects_backend_or_model_override(self):
+        with TemporaryDirectory() as tmp:
+            root = self._write_plan_tree(Path(tmp))
+            plan = load_experiment_plan(root / "plans" / "p.yaml")
+            plan.backend_defaults["ultralytics"]["search_space_file"] = "../search_spaces/global.yaml"
+
+            with self.assertRaisesRegex(ValueError, "Recipe .* defines search_space_file"):
+                expand_experiment_plan(plan)
+
+            del plan.backend_defaults["ultralytics"]["search_space_file"]
+            plan.model_overrides["yolo"]["search_space"] = {
+                "params": {"learning_rate": {"type": "float", "low": 1.0e-5, "high": 1.0e-4}}
+            }
+            with self.assertRaisesRegex(ValueError, "Recipe .* defines search_space_file"):
+                expand_experiment_plan(plan)
+
+    def test_recipe_search_space_path_is_relative_to_recipe(self):
+        with TemporaryDirectory() as tmp:
+            root = self._write_plan_tree(Path(tmp))
+            recipe_path = root / "recipes" / "controlled.yaml"
+            recipe_space_dir = root / "recipes" / "spaces"
+            recipe_space_dir.mkdir()
+            (recipe_space_dir / "recipe_global.yaml").write_text(
+                "params:\n  learning_rate:\n    type: float\n    low: 0.000002\n    high: 0.002\n    log: true\n",
+                encoding="utf-8",
+            )
+            recipe_path.write_text(
+                recipe_path.read_text(encoding="utf-8").replace(
+                    "search_space_file: ../search_spaces/global.yaml",
+                    "search_space_file: spaces/recipe_global.yaml",
+                ),
+                encoding="utf-8",
+            )
+
+            exps = load_and_expand_experiment_plan(root / "plans" / "p.yaml")
+
+        self.assertEqual(exps[0].search_space.params["learning_rate"]["low"], 2.0e-6)
 
     def test_repo_model_groups_are_dataset_agnostic_and_loadable(self):
         import yaml
@@ -117,13 +159,21 @@ class ExperimentPlanTest(unittest.TestCase):
                     self.assertTrue(cfg.key)
 
     def test_repo_search_spaces_validate(self):
-        for path in [
-            Path("configs/search_spaces/yolo_controlled_sgd.yaml"),
-            Path("configs/search_spaces/hf_transformer_controlled.yaml"),
-            Path("configs/search_spaces/torchvision_sgd_controlled.yaml"),
-        ]:
-            with self.subTest(path=path):
-                self.assertTrue(load_search_space(path).params)
+        paths = sorted(Path("configs/search_spaces").glob("*.yaml"))
+
+        self.assertEqual(paths, [Path("configs/search_spaces/global_learning_rate.yaml")])
+        search_space = load_search_space(paths[0])
+        self.assertEqual(
+            search_space.params,
+            {
+                "learning_rate": {
+                    "type": "float",
+                    "low": 3.0e-6,
+                    "high": 3.0e-3,
+                    "log": True,
+                }
+            },
+        )
 
     def test_invalid_search_space_fails_early(self):
         with self.assertRaisesRegex(ValueError, "bad"):
@@ -134,6 +184,45 @@ class ExperimentPlanTest(unittest.TestCase):
 
         self.assertEqual(cfg.model.key, "yolo26m")
         self.assertIsNotNone(cfg.search_space)
+        self.assertEqual(set(cfg.search_space.params), {"learning_rate"})
+        self.assertEqual(cfg.train.optimizer.name, "adamw")
+        self.assertEqual(cfg.train.scheduler.total_epochs, 50)
+
+    def test_repo_controlled_plan_applies_one_protocol_to_every_backend(self):
+        exps = load_and_expand_experiment_plan(Path("configs/plans/hazydet_controlled.yaml"))
+
+        self.assertEqual(len(exps), 25)
+        by_key = {exp.model.key: exp for exp in exps if exp.model is not None}
+        for exp in exps:
+            with self.subTest(model=exp.model.key):
+                self.assertEqual(exp.train.optimizer.name, "adamw")
+                self.assertEqual(exp.train.optimizer.weight_decay, 1.0e-4)
+                self.assertEqual(exp.train.optimizer.beta1, 0.9)
+                self.assertEqual(exp.train.optimizer.beta2, 0.999)
+                self.assertEqual(exp.train.optimizer.epsilon, 1.0e-8)
+                self.assertEqual(exp.train.scheduler.name, "warmup_cosine")
+                self.assertEqual(exp.train.scheduler.warmup_epochs, 1.0)
+                self.assertEqual(exp.train.scheduler.total_epochs, 50)
+                self.assertEqual(exp.train.scheduler.min_lr_ratio, 0.01)
+                self.assertEqual(exp.tuning.n_trials, 8)
+                self.assertEqual(exp.tuning.trial_epochs, 10)
+                self.assertEqual(exp.tuning.sampler_params, {"n_startup_trials": 3})
+                self.assertEqual(exp.tuning.pruner, "none")
+                self.assertEqual(exp.tuning.save_strategy, "final_only")
+                self.assertEqual(set(exp.search_space.params), {"learning_rate"})
+                self.assertTrue(exp.train.eval_strategy.enabled)
+                self.assertTrue(exp.eval.compute_per_class)
+                self.assertTrue(exp.eval.compute_per_condition)
+                self.assertTrue(exp.eval.compute_per_domain)
+                self.assertTrue(exp.eval.compute_per_size)
+                self.assertEqual(exp.eval.max_detections_per_image, 300)
+                self.assertEqual(exp.predict.max_detections_per_image, 300)
+
+        self.assertEqual(by_key["yolo26n"].train.batch_size, 8)
+        self.assertEqual(by_key["yolo26n"].eval.batch_size, 8)
+        self.assertEqual(by_key["yolo26n"].predict.batch_size, 8)
+        self.assertEqual(by_key["yolo26m"].train.batch_size, 16)
+        self.assertEqual(by_key["rfdetr_base"].train.batch_size, 4)
 
     def _write_plan_tree(self, root: Path, *, include_torchvision_default: bool = True) -> Path:
         for name in [
@@ -168,14 +257,23 @@ class ExperimentPlanTest(unittest.TestCase):
                     "protocol: controlled",
                     "preprocess_file: ../preprocess/32.yaml",
                     "augmentation_file: ../augmentations/basic.yaml",
+                    "search_space_file: ../search_spaces/global.yaml",
                     "train:",
-                    "  max_epochs: 1",
+                    "  max_epochs: 50",
+                    "  optimizer:",
+                    "    name: adamw",
+                    "  scheduler:",
+                    "    name: warmup_cosine",
+                    "    warmup_epochs: 1",
+                    "    total_epochs: 50",
+                    "    min_lr_ratio: 0.01",
                     "eval:",
                     "  conf_threshold: 0.001",
                     "predict:",
                     "  conf_threshold: 0.001",
                     "tuning:",
-                    "  n_trials: 1",
+                    "  n_trials: 8",
+                    "  trial_epochs: 10",
                     "  pruner: none",
                     "  objective_metric: map_50_95",
                     "final:",
@@ -199,12 +297,8 @@ class ExperimentPlanTest(unittest.TestCase):
             "models:\n  - ../models/yolo.yaml\n  - ../models/tv.yaml\n",
             encoding="utf-8",
         )
-        (root / "search_spaces" / "yolo.yaml").write_text(
-            "params:\n  lr0:\n    type: float\n    low: 0.001\n    high: 0.01\n    log: true\n",
-            encoding="utf-8",
-        )
-        (root / "search_spaces" / "tv.yaml").write_text(
-            "params:\n  learning_rate:\n    type: float\n    low: 0.001\n    high: 0.01\n    log: true\n",
+        (root / "search_spaces" / "global.yaml").write_text(
+            "params:\n  learning_rate:\n    type: float\n    low: 0.000001\n    high: 0.001\n    log: true\n",
             encoding="utf-8",
         )
 
@@ -215,14 +309,10 @@ class ExperimentPlanTest(unittest.TestCase):
                     "  torchvision:",
                     "    train:",
                     "      batch_size: 2",
-                    "      hparams:",
-                    "        optimizer: sgd",
-                    "        learning_rate: 0.005",
                     "    eval:",
                     "      batch_size: 2",
                     "    predict:",
                     "      batch_size: 2",
-                    "    search_space_file: ../search_spaces/tv.yaml",
                 ]
             )
 
@@ -245,15 +335,10 @@ class ExperimentPlanTest(unittest.TestCase):
                     "  ultralytics:",
                     "    train:",
                     "      batch_size: 8",
-                    "      hparams:",
-                    "        optimizer: SGD",
-                    "        lr0: 0.003",
-                    "        lrf: 0.01",
                     "    eval:",
                     "      batch_size: 4",
                     "    predict:",
                     "      batch_size: 4",
-                    "    search_space_file: ../search_spaces/yolo.yaml",
                     torchvision_default,
                     "model_overrides:",
                     "  yolo:",

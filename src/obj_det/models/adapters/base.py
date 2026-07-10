@@ -27,6 +27,7 @@ class BaseModelAdapter(ABC):
         val_ds: Dataset,
         train_cfg: TrainConfig,
         *,
+        epoch_eval_cfg: EvalConfig | None = None,
         logger: BaseExperimentLogger | None = None,
         log_prefix: str = "train",
     ) -> ModelArtifact:
@@ -59,6 +60,7 @@ class BaseModelAdapter(ABC):
             preprocess=eval_cfg.preprocess,
             conf_threshold=eval_cfg.conf_threshold,
             iou_threshold=eval_cfg.iou_threshold,
+            max_detections_per_image=eval_cfg.max_detections_per_image,
             backend_params=eval_cfg.backend_params,
         )
         predictions = list(self.predict(ds, artifact, predict_cfg))

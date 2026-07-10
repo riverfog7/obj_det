@@ -15,12 +15,16 @@ PrunerName = Literal["none", "median", "asha"]
 class TuningConfig(ModelSchema):
     study_name: str
     direction: Literal["maximize", "minimize"] = "maximize"
-    n_trials: int = Field(default=10, gt=0)
+    n_trials: int = Field(default=8, gt=0)
+    trial_epochs: int = Field(default=10, gt=0)
     timeout_seconds: int | None = Field(default=None, gt=0)
     sampler: SamplerName = "tpe"
-    pruner: PrunerName = "median"
+    sampler_params: dict[str, Any] = Field(default_factory=lambda: {"n_startup_trials": 3})
+    pruner: PrunerName = "none"
     seed: int = 0
     objective_metric: str = "map_50_95"
+    save_strategy: Literal["final_only"] = "final_only"
+    early_stopping: bool = False
     storage: str | None = None
     output_dir: Path
     catch_trial_errors: bool = False
@@ -63,6 +67,9 @@ class TrialResult(ModelSchema):
     metric_name: str | None = None
     metric_value: float | None = None
     artifact_path: Path | None = None
+    checkpoint_path: Path | None = None
+    checkpoint_meta: dict[str, Any] = Field(default_factory=dict)
+    resolved_train_config: dict[str, Any] = Field(default_factory=dict)
     error: str | None = None
     meta: dict[str, Any] = Field(default_factory=dict)
 
@@ -74,6 +81,9 @@ class BestTrial(ModelSchema):
     metric_name: str
     metric_value: float
     artifact_path: Path | None = None
+    checkpoint_path: Path | None = None
+    checkpoint_meta: dict[str, Any] = Field(default_factory=dict)
+    resolved_train_config: dict[str, Any] = Field(default_factory=dict)
     meta: dict[str, Any] = Field(default_factory=dict)
 
 

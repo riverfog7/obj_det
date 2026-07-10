@@ -2,33 +2,68 @@ protocol: controlled
 
 preprocess_file: ../preprocess/640.yaml
 augmentation_file: ../augmentations/basic_light.yaml
+search_space_file: ../search_spaces/global_learning_rate.yaml
 
 train:
   max_epochs: 50
+  seed: 0
   logging_steps: 100
   amp: true
+  gradient_accumulation_steps: 1
   eval_strategy:
-    enabled: false
+    enabled: true
     every_epochs: 1
+  optimizer:
+    name: adamw
+    weight_decay: 1.0e-4
+    beta1: 0.9
+    beta2: 0.999
+    epsilon: 1.0e-8
+  scheduler:
+    name: warmup_cosine
+    warmup_epochs: 1
+    total_epochs: 50
+    min_lr_ratio: 0.01
+  checkpoint:
+    save_every_epochs: 1
+    save_best: true
+    save_last: true
+    keep_all_epoch_checkpoints: true
+  early_stopping:
+    enabled: true
+    metric: map_50_95
+    mode: max
+    min_epochs: 10
+    patience: 8
+    min_delta: 0.001
+    restore_best: true
 
 eval:
   conf_threshold: 0.001
   iou_threshold: 0.7
-  compute_per_class: false
-  compute_per_condition: false
-  compute_per_domain: false
-  compute_per_size: false
+  max_detections_per_image: 300
+  compute_per_class: true
+  compute_per_condition: true
+  compute_per_domain: true
+  compute_per_size: true
 
 predict:
   conf_threshold: 0.001
   iou_threshold: 0.7
+  max_detections_per_image: 300
 
 tuning:
   direction: maximize
-  n_trials: 12
+  n_trials: 8
+  trial_epochs: 10
   sampler: tpe
+  sampler_params:
+    n_startup_trials: 3
+  seed: 0
   pruner: none
   objective_metric: map_50_95
+  save_strategy: final_only
+  early_stopping: false
   catch_trial_errors: false
   detailed_eval: false
 

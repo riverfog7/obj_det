@@ -63,6 +63,9 @@ def expand_experiment_plan(
     augmentation = None
     if recipe.augmentation_file is not None:
         augmentation = load_augmentation_config(_resolve(recipe_path.parent, recipe.augmentation_file))
+    recipe_search_space = None
+    if recipe.search_space_file is not None:
+        recipe_search_space = load_search_space(_resolve(recipe_path.parent, recipe.search_space_file))
 
     selected = set(model_keys or [])
     experiments: list[ExperimentConfig] = []
@@ -76,6 +79,15 @@ def expand_experiment_plan(
                 f"Plan {plan.key!r} has no backend_defaults for backend {model.backend!r} "
                 f"used by model {model.key!r}"
             )
+        backend_defaults = plan.backend_defaults[model.backend]
+        model_override = plan.model_overrides.get(model.key, {})
+        if recipe_search_space is not None:
+            _reject_recipe_search_space_override(
+                recipe_file=recipe_path,
+                model_key=model.key,
+                backend_defaults=backend_defaults,
+                model_override=model_override,
+            )
 
         data = _base_experiment_dict(
             dataset=dataset,
@@ -84,9 +96,12 @@ def expand_experiment_plan(
             model=model.model_dump(mode="json"),
             preprocess=preprocess.model_dump(mode="json"),
             augmentation=augmentation.model_dump(mode="json") if augmentation is not None else None,
+            search_space=(
+                recipe_search_space.model_dump(mode="json") if recipe_search_space is not None else None
+            ),
         )
-        data = deep_merge(data, plan.backend_defaults[model.backend])
-        data = deep_merge(data, plan.model_overrides.get(model.key, {}))
+        data = deep_merge(data, backend_defaults)
+        data = deep_merge(data, model_override)
         data = _apply_run_template(data, plan=plan, dataset=dataset, model_key=model.key, protocol=recipe.protocol)
         data = _resolve_search_space(data, base_dir)
         experiments.append(ExperimentConfig.model_validate(data))
@@ -175,6 +190,7 @@ def _base_experiment_dict(
     model: dict[str, Any],
     preprocess: dict[str, Any],
     augmentation: dict[str, Any] | None,
+    search_space: dict[str, Any] | None,
 ) -> dict[str, Any]:
     data: dict[str, Any] = {
         "dataset": {
@@ -195,6 +211,8 @@ def _base_experiment_dict(
     }
     if augmentation is not None:
         data["augmentation"] = augmentation
+    if search_space is not None:
+        data["search_space"] = search_space
 
     data["train"].setdefault("protocol", recipe.protocol)
     data["train"].setdefault("label_mode", class_space.label_mode)
@@ -242,9 +260,29 @@ def _resolve_search_space(data: dict[str, Any], base_dir: Path) -> dict[str, Any
     data = deepcopy(data)
     search_space_file = data.pop("search_space_file", None)
     if search_space_file is not None:
+        if data.get("search_space") is not None:
+            raise ValueError("Use either search_space or search_space_file, not both")
         search_space = load_search_space(_resolve(base_dir, Path(search_space_file)))
         data["search_space"] = search_space.model_dump(mode="json")
     return data
+
+
+def _reject_recipe_search_space_override(
+    *,
+    recipe_file: Path,
+    model_key: str,
+    backend_defaults: dict[str, Any],
+    model_override: dict[str, Any],
+) -> None:
+    for source_name, values in (
+        ("backend_defaults", backend_defaults),
+        ("model_overrides", model_override),
+    ):
+        if values.get("search_space") is not None or values.get("search_space_file") is not None:
+            raise ValueError(
+                f"Recipe {recipe_file!s} defines search_space_file, but {source_name} also defines "
+                f"a search space for model {model_key!r}"
+            )
 
 
 def _resolve(base_dir: Path, path: Path) -> Path:

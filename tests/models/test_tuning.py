@@ -17,7 +17,8 @@ from obj_det.models.schemas.config import PredictConfig
 from obj_det.models.schemas.logging import LoggingConfig
 from obj_det.models.schemas.prediction import PredictionRecord
 from obj_det.models.schemas.result import EvalResult
-from obj_det.models.tuning.final import run_final_seeds
+from obj_det.models.runner import write_final_results
+from obj_det.models.tuning.final import FinalSeedRun, run_final_seeds
 from obj_det.models.tuning.runner import TuningRunner
 
 from .helpers import row
@@ -27,10 +28,14 @@ class DummyAdapter(BaseModelAdapter):
     def __init__(self):
         super().__init__(ModelConfig(key="dummy", backend="torchvision", model_name_or_path="x"))
         self.trained = []
+        self.train_configs = []
+        self.epoch_eval_configs = []
         self.evaluated = []
 
-    def train(self, train_ds, val_ds, train_cfg, *, logger=None, log_prefix="train"):
+    def train(self, train_ds, val_ds, train_cfg, *, epoch_eval_cfg=None, logger=None, log_prefix="train"):
         self.trained.append((train_cfg.seed, dict(train_cfg.hparams), train_cfg.output_dir))
+        self.train_configs.append(train_cfg)
+        self.epoch_eval_configs.append(epoch_eval_cfg)
         if logger is not None:
             logger.log_metrics({f"{log_prefix}/dummy_loss": 1.0})
         if train_cfg.hparams.get("fail"):
@@ -125,9 +130,20 @@ class FakeOptuna(types.ModuleType):
     def __init__(self, values):
         super().__init__("optuna")
         self.values = values
+        self.sampler_calls = []
+        self.create_study_kwargs = None
+
+        def random_sampler(seed=None):
+            self.sampler_calls.append(("random", seed, {}))
+            return object()
+
+        def tpe_sampler(seed=None, **kwargs):
+            self.sampler_calls.append(("tpe", seed, kwargs))
+            return object()
+
         self.samplers = types.SimpleNamespace(
-            RandomSampler=lambda seed=None: object(),
-            TPESampler=lambda seed=None: object(),
+            RandomSampler=random_sampler,
+            TPESampler=tpe_sampler,
         )
         self.pruners = types.SimpleNamespace(
             NopPruner=lambda: object(),
@@ -137,6 +153,7 @@ class FakeOptuna(types.ModuleType):
         self.study = None
 
     def create_study(self, **kwargs):
+        self.create_study_kwargs = kwargs
         self.study = FakeStudy(self.values)
         return self.study
 
@@ -219,7 +236,7 @@ class TuningTest(unittest.TestCase):
                 adapter=adapter,
                 train_ds=ds,
                 val_ds=ds,
-                base_train_cfg=TrainConfig(run_key="r", classes=["car"], output_dir=Path(tmp) / "base", preprocess=preprocess),
+                base_train_cfg=TrainConfig(run_key="r", classes=["car"], output_dir=Path(tmp) / "base", preprocess=preprocess, protocol="ecosystem"),
                 eval_cfg=EvalConfig(classes=["car"], preprocess=preprocess),
                 search_space=SearchSpace(params={
                     "score": {"type": "float", "low": 0.0, "high": 1.0},
@@ -248,7 +265,7 @@ class TuningTest(unittest.TestCase):
                     adapter=adapter,
                     train_ds=ds,
                     val_ds=ds,
-                    base_train_cfg=TrainConfig(run_key="r", classes=["car"], output_dir=Path(tmp) / "base", preprocess=preprocess),
+                    base_train_cfg=TrainConfig(run_key="r", classes=["car"], output_dir=Path(tmp) / "base", preprocess=preprocess, protocol="ecosystem"),
                     eval_cfg=EvalConfig(classes=["car"], preprocess=preprocess),
                     search_space=SearchSpace(params={
                         "score": {"type": "float", "low": 0.0, "high": 1.0},
@@ -259,7 +276,7 @@ class TuningTest(unittest.TestCase):
 
         self.assertEqual(len(adapter.trained), 1)
 
-    def test_hpo_stores_merged_hparams_for_trials_and_best(self):
+    def test_hpo_stores_sampled_hparams_and_resolved_training_config(self):
         sys.modules["optuna"] = FakeOptuna([
             {"score": 0.3, "fail": False},
         ])
@@ -276,6 +293,7 @@ class TuningTest(unittest.TestCase):
                     classes=["car"],
                     output_dir=Path(tmp) / "base",
                     preprocess=preprocess,
+                    protocol="ecosystem",
                     hparams={"warmup_epochs": 3},
                 ),
                 eval_cfg=EvalConfig(classes=["car"], preprocess=preprocess),
@@ -288,8 +306,150 @@ class TuningTest(unittest.TestCase):
 
         expected = {"warmup_epochs": 3, "score": 0.3, "fail": False}
         self.assertEqual(adapter.trained[0][1], expected)
-        self.assertEqual(result.trials[0].hparams, expected)
-        self.assertEqual(result.best_trial.hparams, expected)
+        sampled = {"score": 0.3, "fail": False}
+        self.assertEqual(result.trials[0].hparams, sampled)
+        self.assertEqual(result.best_trial.hparams, sampled)
+        self.assertEqual(result.best_trial.resolved_train_config["hparams"], expected)
+
+    def test_controlled_hpo_runs_eight_lr_only_trials_with_fixed_protocol(self):
+        class CheckpointingAdapter(DummyAdapter):
+            def train(self, train_ds, val_ds, train_cfg, *, epoch_eval_cfg=None, logger=None, log_prefix="train"):
+                artifact = super().train(
+                    train_ds,
+                    val_ds,
+                    train_cfg,
+                    epoch_eval_cfg=epoch_eval_cfg,
+                    logger=logger,
+                    log_prefix=log_prefix,
+                )
+                checkpoint = train_cfg.output_dir / "checkpoints" / "epoch_010.pt"
+                checkpoint.parent.mkdir(parents=True, exist_ok=True)
+                checkpoint.write_text("checkpoint", encoding="utf-8")
+                return artifact.model_copy(update={"checkpoint_path": checkpoint})
+
+        learning_rates = [3.0e-6 * (1000.0 ** (index / 7.0)) for index in range(8)]
+        fake_optuna = FakeOptuna([{"learning_rate": value} for value in learning_rates])
+        sys.modules["optuna"] = fake_optuna
+        ds = Dataset.from_list([row()])
+        adapter = CheckpointingAdapter()
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            preprocess = PreprocessConfig(image_size=32)
+            result = TuningRunner().optimize(
+                adapter=adapter,
+                train_ds=ds,
+                val_ds=ds,
+                base_train_cfg=TrainConfig(
+                    run_key="r",
+                    classes=["car"],
+                    output_dir=root / "base",
+                    preprocess=preprocess,
+                    protocol="controlled",
+                ),
+                eval_cfg=EvalConfig(classes=["car"], preprocess=preprocess),
+                search_space=SearchSpace(
+                    params={
+                        "learning_rate": {
+                            "type": "float",
+                            "low": 3.0e-6,
+                            "high": 3.0e-3,
+                            "log": True,
+                        }
+                    }
+                ),
+                tuning_cfg=TuningConfig(study_name="s", output_dir=root),
+            )
+
+            checkpoints = sorted(root.glob("trial_*/checkpoints/epoch_010.pt"))
+
+        self.assertEqual(len(adapter.train_configs), 8)
+        self.assertEqual(len(result.trials), 8)
+        self.assertEqual(len(checkpoints), 8)
+        self.assertEqual(fake_optuna.sampler_calls, [("tpe", 0, {"n_startup_trials": 3})])
+        self.assertIsNone(fake_optuna.create_study_kwargs["storage"])
+        self.assertFalse(fake_optuna.create_study_kwargs["load_if_exists"])
+        for train_cfg, epoch_eval_cfg, trial_result, fake_trial in zip(
+            adapter.train_configs,
+            adapter.epoch_eval_configs,
+            result.trials,
+            fake_optuna.study.trials,
+        ):
+            self.assertEqual(train_cfg.max_epochs, 10)
+            self.assertEqual(train_cfg.seed, 0)
+            self.assertFalse(train_cfg.eval_strategy.enabled)
+            self.assertFalse(train_cfg.early_stopping.enabled)
+            self.assertEqual(train_cfg.scheduler.total_epochs, 50)
+            self.assertEqual(train_cfg.checkpoint.save_every_epochs, 10)
+            self.assertFalse(train_cfg.checkpoint.save_best)
+            self.assertTrue(train_cfg.checkpoint.save_last)
+            self.assertFalse(train_cfg.checkpoint.keep_all_epoch_checkpoints)
+            self.assertEqual(set(train_cfg.hparams), {"learning_rate"})
+            self.assertIsNone(epoch_eval_cfg)
+            self.assertEqual(set(trial_result.hparams), {"learning_rate"})
+            self.assertEqual(trial_result.resolved_train_config["max_epochs"], 10)
+            self.assertEqual(trial_result.checkpoint_meta["checkpoint_selection"], "trial_final")
+            self.assertEqual(trial_result.checkpoint_meta["checkpoint_epoch"], 10)
+            self.assertEqual(trial_result.checkpoint_meta["scheduler_total_epochs"], 50)
+            self.assertEqual(fake_trial.reported[1], 10)
+        self.assertEqual(set(result.best_trial.hparams), {"learning_rate"})
+        self.assertEqual(result.best_trial.checkpoint_meta["checkpoint_selection"], "trial_final")
+        self.assertEqual(result.best_trial.meta["boundary_warning"].split()[0], "Best")
+
+    def test_hpo_requires_exact_objective_metric_key(self):
+        class MissingObjectiveAdapter(DummyAdapter):
+            def evaluate(self, ds, artifact, eval_cfg, *, logger=None, log_prefix=None):
+                return EvalResult(
+                    model_key=self.key,
+                    primary_metric="map_50_95",
+                    primary_metric_value=0.9,
+                    metrics={"map_50": 0.9},
+                )
+
+        sys.modules["optuna"] = FakeOptuna([{"learning_rate": 3.0e-4}])
+        ds = Dataset.from_list([row()])
+        with TemporaryDirectory() as tmp:
+            preprocess = PreprocessConfig(image_size=32)
+            with self.assertRaisesRegex(ValueError, "Missing required HPO objective metric 'map_50_95'"):
+                TuningRunner().optimize(
+                    adapter=MissingObjectiveAdapter(),
+                    train_ds=ds,
+                    val_ds=ds,
+                    base_train_cfg=TrainConfig(
+                        run_key="r",
+                        classes=["car"],
+                        output_dir=Path(tmp) / "base",
+                        preprocess=preprocess,
+                    ),
+                    eval_cfg=EvalConfig(classes=["car"], preprocess=preprocess),
+                    search_space=SearchSpace(
+                        params={
+                            "learning_rate": {
+                                "type": "float",
+                                "low": 3.0e-6,
+                                "high": 3.0e-3,
+                                "log": True,
+                            }
+                        }
+                    ),
+                    tuning_cfg=TuningConfig(study_name="s", n_trials=1, output_dir=Path(tmp)),
+                )
+
+    def test_lr_boundary_warning_uses_log_space(self):
+        search_space = SearchSpace(
+            params={
+                "learning_rate": {
+                    "type": "float",
+                    "low": 3.0e-6,
+                    "high": 3.0e-3,
+                    "log": True,
+                }
+            }
+        )
+        runner = TuningRunner()
+
+        self.assertIn("lower log-space boundary", runner._boundary_warning({"learning_rate": 3.0e-6}, search_space))
+        self.assertIsNone(runner._boundary_warning({"learning_rate": (3.0e-6 * 3.0e-3) ** 0.5}, search_space))
+        self.assertIn("upper log-space boundary", runner._boundary_warning({"learning_rate": 3.0e-3}, search_space))
 
     def test_hpo_uses_lightweight_eval_by_default(self):
         class EvalConfigRecordingAdapter(DummyAdapter):
@@ -312,7 +472,7 @@ class TuningTest(unittest.TestCase):
                 adapter=adapter,
                 train_ds=ds,
                 val_ds=ds,
-                base_train_cfg=TrainConfig(run_key="r", classes=["car"], output_dir=Path(tmp) / "base", preprocess=preprocess),
+                base_train_cfg=TrainConfig(run_key="r", classes=["car"], output_dir=Path(tmp) / "base", preprocess=preprocess, protocol="ecosystem"),
                 eval_cfg=EvalConfig(
                     classes=["car"],
                     preprocess=preprocess,
@@ -356,7 +516,7 @@ class TuningTest(unittest.TestCase):
                 adapter=adapter,
                 train_ds=ds,
                 val_ds=ds,
-                base_train_cfg=TrainConfig(run_key="r", classes=["car"], output_dir=Path(tmp) / "base", preprocess=preprocess),
+                base_train_cfg=TrainConfig(run_key="r", classes=["car"], output_dir=Path(tmp) / "base", preprocess=preprocess, protocol="ecosystem"),
                 eval_cfg=EvalConfig(classes=["car"], preprocess=preprocess, compute_per_class=True),
                 search_space=SearchSpace(params={
                     "score": {"type": "float", "low": 0.0, "high": 1.0},
@@ -380,7 +540,7 @@ class TuningTest(unittest.TestCase):
                 adapter=adapter,
                 train_ds=ds,
                 val_ds=ds,
-                base_train_cfg=TrainConfig(run_key="r", classes=["car"], output_dir=Path(tmp) / "base", preprocess=preprocess),
+                base_train_cfg=TrainConfig(run_key="r", classes=["car"], output_dir=Path(tmp) / "base", preprocess=preprocess, protocol="ecosystem"),
                 eval_cfg=EvalConfig(classes=["car"], preprocess=preprocess),
                 search_space=SearchSpace(params={
                     "score": {"type": "float", "low": 0.0, "high": 1.0},
@@ -417,7 +577,7 @@ class TuningTest(unittest.TestCase):
                 adapter=adapter,
                 train_ds=ds,
                 val_ds=ds,
-                base_train_cfg=TrainConfig(run_key="r", classes=["car"], output_dir=Path(tmp) / "base", preprocess=preprocess),
+                base_train_cfg=TrainConfig(run_key="r", classes=["car"], output_dir=Path(tmp) / "base", preprocess=preprocess, protocol="ecosystem"),
                 eval_cfg=EvalConfig(classes=["car"], preprocess=preprocess),
                 search_space=SearchSpace(params={
                     "score": {"type": "float", "low": 0.0, "high": 1.0},
@@ -445,7 +605,7 @@ class TuningTest(unittest.TestCase):
                 adapter=adapter,
                 train_ds=ds,
                 val_ds=ds,
-                base_train_cfg=TrainConfig(run_key="r", classes=["car"], output_dir=root / "base", preprocess=preprocess),
+                base_train_cfg=TrainConfig(run_key="r", classes=["car"], output_dir=root / "base", preprocess=preprocess, protocol="ecosystem"),
                 eval_cfg=EvalConfig(classes=["car"], preprocess=preprocess),
                 search_space=SearchSpace(params={
                     "score": {"type": "float", "low": 0.0, "high": 1.0},
@@ -474,7 +634,7 @@ class TuningTest(unittest.TestCase):
                 test_ds=ds,
                 base_train_cfg=TrainConfig(run_key="final", classes=["car"], output_dir=Path(tmp), preprocess=preprocess),
                 eval_cfg=EvalConfig(classes=["car"], preprocess=preprocess),
-                hparams={"score": 0.4},
+                hparams={"learning_rate": 3.0e-4},
                 seeds=[0, 1, 2],
             )
 
@@ -500,11 +660,14 @@ class TuningTest(unittest.TestCase):
                     hparams={"warmup_epochs": 3},
                 ),
                 eval_cfg=EvalConfig(classes=["car"], preprocess=preprocess),
-                hparams={"score": 0.4},
+                hparams={"learning_rate": 3.0e-4},
                 seeds=[0],
             )
 
-        self.assertEqual(adapter.trained[0][1], {"warmup_epochs": 3, "score": 0.4})
+        self.assertEqual(
+            adapter.trained[0][1],
+            {"warmup_epochs": 3, "learning_rate": 3.0e-4},
+        )
 
     def test_final_seeds_create_one_logger_run_per_seed(self):
         ds = Dataset.from_list([row()])
@@ -520,7 +683,7 @@ class TuningTest(unittest.TestCase):
                 test_ds=ds,
                 base_train_cfg=TrainConfig(run_key="final", classes=["car"], output_dir=Path(tmp), preprocess=preprocess),
                 eval_cfg=EvalConfig(classes=["car"], preprocess=preprocess),
-                hparams={"score": 0.4},
+                hparams={"learning_rate": 3.0e-4},
                 seeds=[0, 1],
                 output_dir=output_dir,
                 logger_factory=logger_factory,
@@ -540,6 +703,144 @@ class TuningTest(unittest.TestCase):
         self.assertTrue(any(event[:2] == ("eval_result", "val") for event in first_events))
         self.assertTrue(any(event[:2] == ("eval_result", "test") for event in first_events))
         self.assertEqual(first_events[-1][:2], ("finish_run", "finished"))
+
+    def test_final_seeds_continue_after_middle_seed_failure(self):
+        class MiddleSeedFailureAdapter(DummyAdapter):
+            def __init__(self):
+                super().__init__()
+                self.attempted_seeds = []
+
+            def train(self, train_ds, val_ds, train_cfg, *, epoch_eval_cfg=None, logger=None, log_prefix="train"):
+                self.attempted_seeds.append(train_cfg.seed)
+                if train_cfg.seed == 1:
+                    raise RuntimeError("seed 1 failed")
+                return super().train(
+                    train_ds,
+                    val_ds,
+                    train_cfg,
+                    epoch_eval_cfg=epoch_eval_cfg,
+                    logger=logger,
+                    log_prefix=log_prefix,
+                )
+
+        ds = Dataset.from_list([row()])
+        adapter = MiddleSeedFailureAdapter()
+        with TemporaryDirectory() as tmp:
+            preprocess = PreprocessConfig(image_size=32)
+            runs = run_final_seeds(
+                adapter=adapter,
+                train_ds=ds,
+                val_ds=ds,
+                test_ds=ds,
+                base_train_cfg=TrainConfig(
+                    run_key="final",
+                    classes=["car"],
+                    output_dir=Path(tmp),
+                    preprocess=preprocess,
+                ),
+                eval_cfg=EvalConfig(classes=["car"], preprocess=preprocess),
+                hparams={"learning_rate": 3.0e-4},
+                seeds=[0, 1, 2],
+            )
+
+        self.assertEqual(adapter.attempted_seeds, [0, 1, 2])
+        self.assertEqual([run.state for run in runs], ["complete", "failed", "complete"])
+        self.assertIn("seed 1 failed", runs[1].error)
+        self.assertEqual(len(adapter.evaluated), 4)
+
+    def test_controlled_final_rejects_legacy_provider_learning_rate_name(self):
+        ds = Dataset.from_list([row()])
+        with TemporaryDirectory() as tmp:
+            preprocess = PreprocessConfig(image_size=32)
+            with self.assertRaisesRegex(ValueError, "canonical 'learning_rate'"):
+                run_final_seeds(
+                    adapter=DummyAdapter(),
+                    train_ds=ds,
+                    val_ds=ds,
+                    test_ds=ds,
+                    base_train_cfg=TrainConfig(
+                        run_key="final",
+                        classes=["car"],
+                        output_dir=Path(tmp),
+                        preprocess=preprocess,
+                    ),
+                    eval_cfg=EvalConfig(classes=["car"], preprocess=preprocess),
+                    hparams={"lr0": 3.0e-4},
+                    seeds=[0],
+                )
+
+    def test_failed_final_seed_preserves_completed_partial_outputs(self):
+        class TestEvalFailureAdapter(DummyAdapter):
+            def evaluate(self, ds, artifact, eval_cfg, *, logger=None, log_prefix=None):
+                if log_prefix == "test":
+                    raise RuntimeError("test evaluation failed")
+                return super().evaluate(
+                    ds,
+                    artifact,
+                    eval_cfg,
+                    logger=logger,
+                    log_prefix=log_prefix,
+                )
+
+        ds = Dataset.from_list([row()])
+        with TemporaryDirectory() as tmp:
+            preprocess = PreprocessConfig(image_size=32)
+            runs = run_final_seeds(
+                adapter=TestEvalFailureAdapter(),
+                train_ds=ds,
+                val_ds=ds,
+                test_ds=ds,
+                base_train_cfg=TrainConfig(
+                    run_key="final",
+                    classes=["car"],
+                    output_dir=Path(tmp),
+                    preprocess=preprocess,
+                ),
+                eval_cfg=EvalConfig(classes=["car"], preprocess=preprocess),
+                hparams={"learning_rate": 3.0e-4},
+                seeds=[0],
+            )
+
+        self.assertEqual(runs[0].state, "failed")
+        self.assertIsNotNone(runs[0].artifact)
+        self.assertIsNotNone(runs[0].val_result)
+        self.assertIsNone(runs[0].test_result)
+
+    def test_final_result_aggregation_uses_successful_metric_intersection_and_sample_std(self):
+        def result(metrics):
+            return EvalResult(
+                model_key="dummy",
+                primary_metric="shared",
+                primary_metric_value=metrics["shared"],
+                metrics=metrics,
+            )
+
+        runs = [
+            FinalSeedRun(
+                seed=0,
+                state="complete",
+                val_result=result({"shared": 2.0, "seed0_only": 9.0}),
+                test_result=result({"shared": 5.0}),
+            ),
+            FinalSeedRun(seed=1, state="failed", error="planned failure"),
+            FinalSeedRun(
+                seed=2,
+                state="complete",
+                val_result=result({"shared": 4.0, "seed2_only": 7.0}),
+            ),
+        ]
+
+        with TemporaryDirectory() as tmp:
+            path = write_final_results(runs, Path(tmp) / "final.json")
+            payload = json.loads(path.read_text(encoding="utf-8"))
+
+        aggregate = payload["aggregate"]
+        self.assertEqual(aggregate["successful_seeds"], 2)
+        self.assertEqual(aggregate["failed_seeds"], 1)
+        self.assertEqual(set(aggregate["val"]), {"shared"})
+        self.assertEqual(aggregate["val"]["shared"]["mean"], 3.0)
+        self.assertAlmostEqual(aggregate["val"]["shared"]["std"], 2.0 ** 0.5)
+        self.assertEqual(aggregate["test"]["shared"]["std"], 0.0)
 
 
 if __name__ == "__main__":

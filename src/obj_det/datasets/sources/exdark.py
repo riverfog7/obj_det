@@ -224,6 +224,8 @@ class ExDarkSourceDataset(BaseSourceDataset):
 
             native_label = parts[0]
             if native_label not in CLASS_IDS:
+                self._increment_import_stat("source_objects_seen")
+                self._increment_import_stat("dropped_unknown_labels")
                 logger.warning(
                     "Skipping ExDark row with unknown label: %s:%s label=%s",
                     annotation_path,

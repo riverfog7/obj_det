@@ -7,8 +7,9 @@ from types import SimpleNamespace
 
 import torch
 
-from obj_det.models.adapters.ultralytics import UltralyticsDetectionAdapter
+from obj_det.models.adapters.ultralytics import _NoOpEpochScheduler, UltralyticsDetectionAdapter
 from obj_det.models.schemas import DataLoaderConfig, PreprocessConfig, ModelConfig, TrainConfig
+from obj_det.models.training import CheckpointState
 
 
 class RecordingLogger:
@@ -35,8 +36,29 @@ class FakeDetectionTrainer:
     def label_loss_items(self, loss_items, prefix="train"):
         return {f"{prefix}/{name}": float(value) for name, value in zip(self.loss_names, loss_items)}
 
+    def optimizer_step(self):
+        return None
+
+    def build_optimizer(self, model, name="auto", lr=0.001, momentum=0.9, decay=1.0e-5, iterations=1.0e5):
+        return {
+            "model": model,
+            "name": name,
+            "lr": lr,
+            "momentum": momentum,
+            "decay": decay,
+            "iterations": iterations,
+        }
+
 
 class UltralyticsLoggingTest(unittest.TestCase):
+    def test_epoch_scheduler_reset_does_not_rewind_optimizer_step_schedule(self):
+        optimizer_step_scheduler = SimpleNamespace(last_epoch=0)
+        wrapper = _NoOpEpochScheduler(optimizer_step_scheduler)
+
+        wrapper.last_epoch = -1
+
+        self.assertEqual(optimizer_step_scheduler.last_epoch, 0)
+
     def test_custom_trainer_logs_every_configured_step_and_final_short_step(self):
         adapter = UltralyticsDetectionAdapter(
             ModelConfig(key="yolo", backend="ultralytics", model_name_or_path="yolo11n.pt")
@@ -142,7 +164,224 @@ class UltralyticsLoggingTest(unittest.TestCase):
         self.assertEqual(overrides["hsv_h"], 0.0)
         self.assertEqual(overrides["mixup"], 0.0)
 
-    def test_train_overrides_include_lrf(self):
+    def test_controlled_protocol_rejects_provider_optimizer_scheduler_overrides(self):
+        adapter = UltralyticsDetectionAdapter(
+            ModelConfig(key="yolo", backend="ultralytics", model_name_or_path="yolo11n.pt")
+        )
+        cfg = TrainConfig(
+            run_key="r",
+            classes=["car"],
+            output_dir=Path("runs/test"),
+            preprocess=PreprocessConfig(image_size=64),
+            protocol="controlled",
+            hparams={"learning_rate": 3.0e-4},
+            backend_params={
+                "overrides": {
+                    "epochs": 7,
+                    "optimizer": "SGD",
+                    "lr0": 0.5,
+                    "lrf": 0.5,
+                    "weight_decay": 0.2,
+                    "momentum": 0.5,
+                    "warmup_epochs": 4.0,
+                    "cos_lr": True,
+                    "patience": 99,
+                    "nbs": 64,
+                }
+            },
+        )
+
+        overrides = adapter._train_overrides(cfg)
+
+        self.assertEqual(overrides["epochs"], 50)
+        self.assertEqual(overrides["optimizer"], "AdamW")
+        self.assertEqual(overrides["lr0"], 3.0e-4)
+        self.assertEqual(overrides["lrf"], 0.01)
+        self.assertEqual(overrides["weight_decay"], 1.0e-4)
+        self.assertEqual(overrides["momentum"], 0.9)
+        self.assertEqual(overrides["warmup_epochs"], 0.0)
+        self.assertFalse(overrides["cos_lr"])
+        self.assertEqual(overrides["patience"], 0)
+        self.assertEqual(overrides["nbs"], cfg.batch_size)
+
+    def test_configured_pretrained_weights_are_used_as_training_source(self):
+        adapter = UltralyticsDetectionAdapter(
+            ModelConfig(
+                key="yolo",
+                backend="ultralytics",
+                model_name_or_path="architecture.yaml",
+                weights="pretrained.pt",
+            )
+        )
+        cfg = TrainConfig(
+            run_key="r",
+            classes=["car"],
+            output_dir=Path("runs/test"),
+            preprocess=PreprocessConfig(image_size=64),
+            hparams={"learning_rate": 3.0e-4},
+        )
+
+        overrides = adapter._train_overrides(cfg)
+
+        self.assertEqual(overrides["model"], "pretrained.pt")
+
+    def test_multi_device_training_fails_explicitly(self):
+        adapter = UltralyticsDetectionAdapter(
+            ModelConfig(key="yolo", backend="ultralytics", model_name_or_path="yolo11n.pt")
+        )
+        cfg = TrainConfig(
+            run_key="r",
+            classes=["car"],
+            output_dir=Path("runs/test"),
+            preprocess=PreprocessConfig(image_size=64),
+            backend_params={"device": "0,1"},
+        )
+
+        with self.assertRaisesRegex(NotImplementedError, "single training process"):
+            adapter._validate_single_process_device(cfg)
+
+    def test_non_divisible_accumulation_flushes_on_final_batch_each_epoch(self):
+        adapter = UltralyticsDetectionAdapter(
+            ModelConfig(key="yolo", backend="ultralytics", model_name_or_path="yolo11n.pt")
+        )
+        trainer_cls = adapter._trainer_class(FakeDetectionTrainer)
+        trainer = trainer_cls(
+            train_source=None,
+            val_source=None,
+            train_transform=None,
+            eval_transform=None,
+            loader_cfg=None,
+            classes=["car"],
+            max_steps=None,
+            logger=None,
+            log_prefix="train",
+            logging_steps=100,
+            gradient_accumulation_steps=4,
+        )
+        trainer.train_loader = [object()] * 10
+        trainer._protocol_nominal_accumulate = 4
+
+        last_optimizer_batch = -1
+        optimizer_batches = []
+        for epoch in range(2):
+            trainer.run_callbacks("on_train_epoch_start")
+            for batch_index in range(10):
+                trainer.run_callbacks("on_train_batch_start")
+                global_batch = epoch * 10 + batch_index
+                if global_batch - last_optimizer_batch >= trainer.accumulate:
+                    trainer.optimizer_step()
+                    last_optimizer_batch = global_batch
+                    optimizer_batches.append(global_batch)
+                trainer.run_callbacks("on_train_batch_end")
+
+        self.assertEqual(optimizer_batches, [3, 7, 9, 13, 17, 19])
+        self.assertEqual(trainer._protocol_optimizer_steps, 6)
+
+    def test_amp_overflow_does_not_advance_optimizer_step_scheduler(self):
+        class ScaleTracker:
+            def __init__(self):
+                self.value = 8.0
+
+            def get_scale(self):
+                return self.value
+
+        class OverflowDetectionTrainer(FakeDetectionTrainer):
+            def optimizer_step(self):
+                self.scaler.value = 4.0
+
+        adapter = UltralyticsDetectionAdapter(
+            ModelConfig(key="yolo", backend="ultralytics", model_name_or_path="yolo11n.pt")
+        )
+        trainer_cls = adapter._trainer_class(OverflowDetectionTrainer)
+        trainer = trainer_cls(
+            train_source=None,
+            val_source=None,
+            train_transform=None,
+            eval_transform=None,
+            loader_cfg=None,
+            classes=["car"],
+            max_steps=None,
+            logger=None,
+            log_prefix="train",
+            logging_steps=100,
+        )
+        trainer.scaler = ScaleTracker()
+        trainer._protocol_scheduler = SimpleNamespace(step=lambda: self.fail("scheduler advanced"))
+
+        trainer.optimizer_step()
+
+        self.assertEqual(trainer._protocol_optimizer_steps, 0)
+
+    def test_trial_final_save_redirects_provider_best_to_single_checkpoint(self):
+        class SavingFakeDetectionTrainer(FakeDetectionTrainer):
+            def save_model(self):
+                self.last.write_text("last", encoding="utf-8")
+                if self.best_fitness == self.fitness:
+                    self.best.write_text("best", encoding="utf-8")
+                return True
+
+        adapter = UltralyticsDetectionAdapter(
+            ModelConfig(key="yolo", backend="ultralytics", model_name_or_path="yolo11n.pt")
+        )
+        trainer_cls = adapter._trainer_class(SavingFakeDetectionTrainer)
+        trainer = trainer_cls(
+            train_source=None,
+            val_source=None,
+            train_transform=None,
+            eval_transform=None,
+            loader_cfg=None,
+            classes=["car"],
+            max_steps=None,
+            logger=None,
+            log_prefix="train",
+            logging_steps=100,
+        )
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            trainer.last = root / "last.pt"
+            trainer.best = root / "best.pt"
+            trainer.best_fitness = None
+            trainer.fitness = None
+
+            trainer._save_trial_final_checkpoint()
+
+            self.assertTrue(trainer.last.exists())
+            self.assertFalse((root / "best.pt").exists())
+            self.assertEqual(trainer.best, root / "best.pt")
+
+    def test_hpo_epoch_end_does_not_record_nonexistent_intermediate_checkpoints(self):
+        adapter = UltralyticsDetectionAdapter(
+            ModelConfig(key="yolo", backend="ultralytics", model_name_or_path="yolo11n.pt")
+        )
+        trainer_cls = adapter._trainer_class(FakeDetectionTrainer)
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            checkpoint_state = CheckpointState(root)
+            trainer = trainer_cls(
+                train_source=None,
+                val_source=None,
+                train_transform=None,
+                eval_transform=None,
+                loader_cfg=None,
+                classes=["car"],
+                max_steps=None,
+                logger=None,
+                log_prefix="train",
+                logging_steps=100,
+                checkpoint_state=checkpoint_state,
+            )
+            trainer.epoch = 0
+            trainer.wdir = root / "weights"
+            trainer.last = trainer.wdir / "last.pt"
+            trainer.args = SimpleNamespace(save=False)
+            trainer._protocol_stop_at_epoch_end = False
+
+            trainer._protocol_epoch_end()
+
+            self.assertIsNone(checkpoint_state.last_checkpoint)
+            self.assertFalse(checkpoint_state.manifest_path.exists())
+
+    def test_controlled_train_overrides_use_fixed_final_lr_ratio(self):
         adapter = UltralyticsDetectionAdapter(
             ModelConfig(key="yolo", backend="ultralytics", model_name_or_path="yolo11n.pt")
         )
@@ -156,7 +395,7 @@ class UltralyticsLoggingTest(unittest.TestCase):
 
         overrides = adapter._train_overrides(cfg)
 
-        self.assertEqual(overrides["lrf"], 0.05)
+        self.assertEqual(overrides["lrf"], 0.01)
 
     def test_ecosystem_protocol_allows_provider_augmentation_overrides(self):
         adapter = UltralyticsDetectionAdapter(
@@ -174,6 +413,65 @@ class UltralyticsLoggingTest(unittest.TestCase):
         overrides = adapter._train_overrides(cfg)
 
         self.assertEqual(overrides["mosaic"], 1.0)
+
+    def test_ecosystem_protocol_preserves_provider_optimizer_and_scheduler_hparams(self):
+        adapter = UltralyticsDetectionAdapter(
+            ModelConfig(key="yolo", backend="ultralytics", model_name_or_path="yolo11n.pt")
+        )
+        cfg = TrainConfig(
+            run_key="r",
+            classes=["car"],
+            output_dir=Path("runs/test"),
+            preprocess=PreprocessConfig(image_size=64),
+            protocol="ecosystem",
+            max_epochs=12,
+            hparams={
+                "optimizer": "SGD",
+                "lr0": 0.02,
+                "lrf": 0.2,
+                "weight_decay": 0.003,
+                "momentum": 0.85,
+                "warmup_epochs": 2.0,
+                "cos_lr": True,
+            },
+        )
+
+        overrides = adapter._train_overrides(cfg)
+
+        self.assertEqual(overrides["epochs"], 12)
+        self.assertEqual(overrides["optimizer"], "SGD")
+        self.assertEqual(overrides["lr0"], 0.02)
+        self.assertEqual(overrides["lrf"], 0.2)
+        self.assertEqual(overrides["weight_decay"], 0.003)
+        self.assertEqual(overrides["momentum"], 0.85)
+        self.assertEqual(overrides["warmup_epochs"], 2.0)
+        self.assertTrue(overrides["cos_lr"])
+        self.assertTrue(overrides["save"])
+
+        trainer_cls = adapter._trainer_class(FakeDetectionTrainer)
+        trainer = trainer_cls(
+            train_source=None,
+            val_source=None,
+            train_transform=None,
+            eval_transform=None,
+            loader_cfg=None,
+            classes=["car"],
+            max_steps=None,
+            logger=None,
+            log_prefix="train",
+            logging_steps=100,
+            shared_protocol=False,
+        )
+        delegated = trainer.build_optimizer(
+            object(),
+            name="SGD",
+            lr=0.02,
+            momentum=0.85,
+            decay=0.003,
+            iterations=10,
+        )
+        self.assertEqual(delegated["name"], "SGD")
+        self.assertEqual(delegated["momentum"], 0.85)
 
     def test_artifact_uses_last_checkpoint_for_external_eval(self):
         adapter = UltralyticsDetectionAdapter(
@@ -204,7 +502,7 @@ class UltralyticsLoggingTest(unittest.TestCase):
         self.assertEqual(artifact.checkpoint_path, last)
         self.assertEqual(artifact.meta["protocol"], "controlled")
         self.assertEqual(artifact.meta["ultralytics_best"], str(best))
-        self.assertEqual(artifact.meta["checkpoint_selection"], "last_external_eval")
+        self.assertEqual(artifact.meta["checkpoint_selection"], "last")
 
 
 if __name__ == "__main__":

@@ -48,6 +48,8 @@ class ModelConfigMatrixTest(unittest.TestCase):
                 cfg = load_model_config(path)
                 self.assertEqual(path.stem, key)
                 self.assertIn(cfg.backend, MODEL_BACKENDS)
+                if cfg.backend == "torchvision":
+                    self.assertEqual(cfg.weights, "DEFAULT")
                 self.assertEqual(model_adapter_from_config(cfg).key, key)
 
     def test_debug_experiment_config_loads(self):
@@ -62,11 +64,17 @@ class ModelConfigMatrixTest(unittest.TestCase):
         self.assertEqual(cfg.model.key, "yolo26m")
         self.assertEqual(cfg.train.run_key, "yolo26m_hazydet_controlled")
         self.assertEqual(cfg.tuning.study_name, "yolo26m_hazydet_controlled")
+        self.assertEqual(cfg.tuning.n_trials, 8)
+        self.assertEqual(cfg.tuning.trial_epochs, 10)
+        self.assertEqual(cfg.tuning.sampler_params, {"n_startup_trials": 3})
         self.assertEqual(str(cfg.train.output_dir), "runs/yolo26m/hazydet/controlled")
         self.assertEqual(cfg.train.logging_steps, 100)
+        self.assertEqual(cfg.train.optimizer.name, "adamw")
+        self.assertEqual(cfg.train.scheduler.total_epochs, 50)
         self.assertEqual(str(cfg.tuning.output_dir), "runs/hpo/yolo26m_hazydet_controlled")
         self.assertEqual(cfg.logging.wandb.project, "yolo26m_hazydet_controlled")
         self.assertEqual(cfg.classes, ["person", "bicycle", "motorcycle", "car", "bus", "truck"])
+        self.assertEqual(set(cfg.search_space.params), {"learning_rate"})
 
     def test_search_spaces_load(self):
         for path in sorted(Path("configs/search_spaces").glob("*.yaml")):

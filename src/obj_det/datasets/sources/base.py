@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from abc import ABC, abstractmethod
+from collections import Counter
 from pathlib import Path
 from typing import Any, Iterator, Sequence
 
@@ -10,6 +11,18 @@ from obj_det.datasets.models.source_config import SourceDatasetConfig, SourceSpl
 
 
 logger = logging.getLogger(__name__)
+
+_IMPORT_STAT_NAMES = (
+    "source_images_seen",
+    "source_images_kept",
+    "dropped_empty_or_ambiguous_images",
+    "source_objects_seen",
+    "source_objects_kept",
+    "dropped_invalid_boxes",
+    "dropped_unknown_labels",
+    "dropped_ignored_labels",
+    "unmapped_meta_labels",
+)
 
 
 class BaseSourceDataset(ABC):
@@ -24,6 +37,8 @@ class BaseSourceDataset(ABC):
     def __init__(self, cfg: SourceDatasetConfig):
         self.cfg = cfg
         self.key = cfg.key
+        self._active_import_split: str | None = None
+        self._import_stats: dict[str, Counter[str]] = {}
 
     # ------------------------------------------------------------------
     # Required implementation
@@ -69,25 +84,42 @@ class BaseSourceDataset(ABC):
         and optional geometry validation.
         """
         self.require_split(split)
+        stats: Counter[str] = Counter({name: 0 for name in _IMPORT_STAT_NAMES})
+        self._import_stats[split] = stats
+        self._active_import_split = split
 
-        for record in self._iter_records(split):
-            self.validate_record_identity(record, split)
+        try:
+            for record in self._iter_records(split):
+                stats["source_images_seen"] += 1
+                self.validate_record_identity(record, split)
 
-            if validate_geometry:
-                record.assert_valid_geometry()
+                if validate_geometry:
+                    record.assert_valid_geometry()
 
-            if not record.valid_objects(mode="native"):
-                logger.warning(
-                    "Skipping image with no valid objects: "
-                    "dataset=%s split=%s image_id=%s image_path=%s",
-                    record.dataset,
-                    record.split,
-                    record.image_id,
-                    record.image_path,
-                )
-                continue
+                if not record.valid_objects(mode="native"):
+                    stats["dropped_empty_or_ambiguous_images"] += 1
+                    logger.warning(
+                        "Skipping image with no valid objects: "
+                        "dataset=%s split=%s image_id=%s image_path=%s",
+                        record.dataset,
+                        record.split,
+                        record.image_id,
+                        record.image_path,
+                    )
+                    continue
 
-            yield record
+                stats["source_images_kept"] += 1
+                yield record
+        finally:
+            self._active_import_split = None
+
+    def import_stats_snapshot(self, split: str) -> dict[str, int]:
+        return dict(self._import_stats.get(split, Counter()))
+
+    def _increment_import_stat(self, name: str, count: int = 1) -> None:
+        if self._active_import_split is None:
+            return
+        self._import_stats[self._active_import_split][name] += count
 
     # ------------------------------------------------------------------
     # Config helpers
@@ -245,8 +277,10 @@ class BaseSourceDataset(ABC):
         meta: dict[str, Any] | None = None,
     ) -> ObjectAnnotation | None:
         native_label = native_label.strip()
+        self._increment_import_stat("source_objects_seen")
 
         if native_label in self.cfg.ignore_labels:
+            self._increment_import_stat("dropped_ignored_labels")
             return None
 
         bbox = self.make_bbox_xywh(
@@ -256,17 +290,24 @@ class BaseSourceDataset(ABC):
         )
 
         if bbox is None:
+            self._increment_import_stat("dropped_invalid_boxes")
             return None
 
-        return ObjectAnnotation(
+        meta_label = self.cfg.class_map.get(native_label)
+        if meta_label is None:
+            self._increment_import_stat("unmapped_meta_labels")
+
+        annotation = ObjectAnnotation(
             bbox=bbox,
             native_label=native_label,
             native_label_id=native_label_id,
-            meta_label=self.cfg.class_map.get(native_label),
+            meta_label=meta_label,
             ignore=ignore,
             iscrowd=iscrowd,
             meta=meta or {},
         )
+        self._increment_import_stat("source_objects_kept")
+        return annotation
 
     def make_record(
         self,

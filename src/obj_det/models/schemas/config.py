@@ -65,6 +65,38 @@ class EvalStrategyConfig(ModelSchema):
     every_epochs: int = Field(default=1, gt=0)
 
 
+class OptimizerConfig(ModelSchema):
+    name: Literal["adamw"] = "adamw"
+    weight_decay: float = Field(default=1.0e-4, ge=0.0)
+    beta1: float = Field(default=0.9, ge=0.0, lt=1.0)
+    beta2: float = Field(default=0.999, ge=0.0, lt=1.0)
+    epsilon: float = Field(default=1.0e-8, gt=0.0)
+
+
+class SchedulerConfig(ModelSchema):
+    name: Literal["warmup_cosine"] = "warmup_cosine"
+    warmup_epochs: float = Field(default=1.0, ge=0.0)
+    total_epochs: int = Field(default=50, gt=0)
+    min_lr_ratio: float = Field(default=0.01, ge=0.0, le=1.0)
+
+
+class CheckpointConfig(ModelSchema):
+    save_every_epochs: int = Field(default=1, gt=0)
+    save_best: bool = True
+    save_last: bool = True
+    keep_all_epoch_checkpoints: bool = True
+
+
+class EarlyStoppingConfig(ModelSchema):
+    enabled: bool = True
+    metric: str = "map_50_95"
+    mode: Literal["max"] = "max"
+    min_epochs: int = Field(default=10, gt=0)
+    patience: int = Field(default=8, gt=0)
+    min_delta: float = Field(default=0.001, ge=0.0)
+    restore_best: bool = True
+
+
 class TrainConfig(ModelSchema):
     run_key: str
     classes: list[str]
@@ -75,9 +107,14 @@ class TrainConfig(ModelSchema):
     augmentation: AugmentationConfig = Field(default_factory=AugmentationConfig)
     loader: DataLoaderConfig = Field(default_factory=DataLoaderConfig)
     eval_strategy: EvalStrategyConfig = Field(default_factory=EvalStrategyConfig)
+    optimizer: OptimizerConfig = Field(default_factory=OptimizerConfig)
+    scheduler: SchedulerConfig = Field(default_factory=SchedulerConfig)
+    checkpoint: CheckpointConfig = Field(default_factory=CheckpointConfig)
+    early_stopping: EarlyStoppingConfig = Field(default_factory=EarlyStoppingConfig)
     max_epochs: int | None = Field(default=50, gt=0)
     max_steps: int | None = Field(default=None, gt=0)
     batch_size: int = Field(default=16, gt=0)
+    gradient_accumulation_steps: int = Field(default=1, gt=0)
     logging_steps: int = Field(default=100, gt=0)
     seed: int = 0
     amp: bool = True
@@ -105,6 +142,7 @@ class PredictConfig(ModelSchema):
     preprocess: PreprocessConfig
     conf_threshold: float = Field(default=0.001, ge=0.0, le=1.0)
     iou_threshold: float = Field(default=0.7, ge=0.0, le=1.0)
+    max_detections_per_image: int = Field(default=300, gt=0)
     backend_params: dict[str, Any] = Field(default_factory=dict)
 
     @field_validator("classes")
@@ -120,6 +158,7 @@ class EvalConfig(ModelSchema):
     preprocess: PreprocessConfig
     conf_threshold: float = Field(default=0.001, ge=0.0, le=1.0)
     iou_threshold: float = Field(default=0.7, ge=0.0, le=1.0)
+    max_detections_per_image: int = Field(default=300, gt=0)
     compute_per_class: bool = False
     compute_per_condition: bool = False
     compute_per_domain: bool = False

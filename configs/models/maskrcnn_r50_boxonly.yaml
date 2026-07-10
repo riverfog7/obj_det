@@ -1,4 +1,5 @@
 key: maskrcnn_r50_boxonly
 backend: torchvision
 model_name_or_path: maskrcnn_resnet50_fpn
+weights: DEFAULT
 params: {}

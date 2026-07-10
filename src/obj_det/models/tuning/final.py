@@ -11,14 +11,17 @@ from obj_det.models.logging.factory import LoggerFactory
 from obj_det.models.schemas.artifact import ModelArtifact
 from obj_det.models.schemas.config import EvalConfig, TrainConfig
 from obj_det.models.schemas.result import EvalResult
+from obj_det.models.training import require_single_process
 
 
 @dataclass
 class FinalSeedRun:
     seed: int
-    artifact: ModelArtifact
-    val_result: EvalResult | None
-    test_result: EvalResult | None
+    state: str
+    artifact: ModelArtifact | None = None
+    val_result: EvalResult | None = None
+    test_result: EvalResult | None = None
+    error: str | None = None
 
 
 def run_final_seeds(
@@ -38,8 +41,24 @@ def run_final_seeds(
 ) -> list[FinalSeedRun]:
     """Train/evaluate final runs for fixed seeds without choosing a best seed."""
 
+    if base_train_cfg.protocol in {"controlled", "equal_hpo"} and "learning_rate" not in hparams:
+        raise ValueError(
+            "Controlled final training requires canonical 'learning_rate' in the selected HPO parameters"
+        )
+    if base_train_cfg.protocol in {"controlled", "equal_hpo"}:
+        require_single_process(context="Controlled final-seed orchestration")
+
     runs: list[FinalSeedRun] = []
     final_hparams = {**base_train_cfg.hparams, **hparams}
+    epoch_eval_cfg = eval_cfg.model_copy(
+        update={
+            "compute_per_class": False,
+            "compute_per_condition": False,
+            "compute_per_domain": False,
+            "compute_per_size": False,
+        },
+        deep=True,
+    )
     for seed in seeds:
         run_output_dir = (output_dir or base_train_cfg.output_dir) / f"final_seed{seed}"
         train_cfg = base_train_cfg.model_copy(
@@ -55,6 +74,9 @@ def run_final_seeds(
         logger = logger_factory(run_name, run_output_dir / "logs/events.jsonl") if logger_factory else None
         state = "finished"
         error = None
+        artifact = None
+        val_result = None
+        test_result = None
         try:
             if logger is not None:
                 logger.start_run(
@@ -64,11 +86,19 @@ def run_final_seeds(
                         "final": {
                             "seed": seed,
                             "hparams": final_hparams,
+                            "resolved_train_config": train_cfg.model_dump(mode="json"),
                         },
                     },
                 )
                 logger.log_metrics({"run/started": 1}, step=0)
-            artifact = adapter.train(train_ds, val_ds, train_cfg, logger=logger, log_prefix="train")
+            artifact = adapter.train(
+                train_ds,
+                val_ds,
+                train_cfg,
+                epoch_eval_cfg=epoch_eval_cfg,
+                logger=logger,
+                log_prefix="train",
+            )
             val_result = (
                 adapter.evaluate(val_ds, artifact, eval_cfg, logger=logger, log_prefix="val")
                 if evaluate_val
@@ -84,9 +114,28 @@ def run_final_seeds(
         except Exception as exc:
             state = "failed"
             error = repr(exc)
-            raise
         finally:
             if logger is not None:
                 logger.finish_run(state=state, error=error)
-        runs.append(FinalSeedRun(seed=seed, artifact=artifact, val_result=val_result, test_result=test_result))
+        if state == "failed":
+            runs.append(
+                FinalSeedRun(
+                    seed=seed,
+                    state=state,
+                    artifact=artifact,
+                    val_result=val_result,
+                    test_result=test_result,
+                    error=error,
+                )
+            )
+            continue
+        runs.append(
+            FinalSeedRun(
+                seed=seed,
+                state="complete",
+                artifact=artifact,
+                val_result=val_result,
+                test_result=test_result,
+            )
+        )
     return runs

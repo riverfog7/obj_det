@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import statistics
 from pathlib import Path
 
 from datasets import load_from_disk
@@ -37,6 +38,7 @@ class ExperimentRunner:
                 train_ds=self._split(dataset, self.exp.dataset.train_split),
                 val_ds=self._split(dataset, self.exp.dataset.val_split),
                 train_cfg=self.exp.train,
+                epoch_eval_cfg=self._epoch_eval_cfg() if self.exp.train.eval_strategy.enabled else None,
                 logger=logger,
                 log_prefix="train",
             )
@@ -134,7 +136,7 @@ class ExperimentRunner:
     def run_config(self) -> dict:
         world_size = int(os.environ.get("WORLD_SIZE", "1"))
         data = self.exp.model_dump(mode="json")
-        gradient_accumulation_steps = int(getattr(self.exp.train, "gradient_accumulation_steps", 1))
+        gradient_accumulation_steps = int(self.exp.train.gradient_accumulation_steps)
         data["batch"] = {
             "batch_size": self.exp.train.batch_size,
             "world_size": world_size,
@@ -162,14 +164,35 @@ class ExperimentRunner:
             raise KeyError(f"Missing split {split!r}. Available splits: {list(dataset.keys())}")
         return dataset[split]
 
+    def _epoch_eval_cfg(self):
+        return self.exp.eval.model_copy(
+            update={
+                "compute_per_class": False,
+                "compute_per_condition": False,
+                "compute_per_domain": False,
+                "compute_per_size": False,
+            },
+            deep=True,
+        )
+
 
 def write_final_results(runs: list[FinalSeedRun], path: Path) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
+    completed = [run for run in runs if run.state == "complete"]
+    failed = [run for run in runs if run.state != "complete"]
     data = {
+        "aggregate": {
+            "successful_seeds": len(completed),
+            "failed_seeds": len(failed),
+            "val": _aggregate_results(completed, "val_result"),
+            "test": _aggregate_results(completed, "test_result"),
+        },
         "runs": [
             {
                 "seed": run.seed,
-                "artifact": run.artifact.model_dump(mode="json"),
+                "state": run.state,
+                "error": run.error,
+                "artifact": run.artifact.model_dump(mode="json") if run.artifact is not None else None,
                 "val_result": run.val_result.model_dump(mode="json") if run.val_result is not None else None,
                 "test_result": run.test_result.model_dump(mode="json") if run.test_result is not None else None,
             }
@@ -178,3 +201,24 @@ def write_final_results(runs: list[FinalSeedRun], path: Path) -> Path:
     }
     path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
     return path
+
+
+def _aggregate_results(runs: list[FinalSeedRun], attribute: str) -> dict:
+    results = [getattr(run, attribute) for run in runs]
+    results = [result for result in results if result is not None]
+    if not results:
+        return {}
+
+    shared_metrics = set(results[0].metrics)
+    for result in results[1:]:
+        shared_metrics.intersection_update(result.metrics)
+
+    aggregate = {}
+    for name in sorted(shared_metrics):
+        values = [float(result.metrics[name]) for result in results]
+        aggregate[name] = {
+            "mean": statistics.fmean(values),
+            "std": statistics.stdev(values) if len(values) > 1 else 0.0,
+            "values": values,
+        }
+    return aggregate
