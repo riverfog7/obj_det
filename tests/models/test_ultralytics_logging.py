@@ -1,15 +1,21 @@
 from __future__ import annotations
 
+import sys
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
+from unittest.mock import patch
 
 import torch
+from datasets import Dataset
 
 from obj_det.models.adapters.ultralytics import _NoOpEpochScheduler, UltralyticsDetectionAdapter
-from obj_det.models.schemas import DataLoaderConfig, PreprocessConfig, ModelConfig, TrainConfig
+from obj_det.models.schemas import DataLoaderConfig, EvalConfig, ModelConfig, PreprocessConfig, TrainConfig
+from obj_det.models.schemas.artifact import ModelArtifact
 from obj_det.models.training import CheckpointState
+
+from .helpers import row
 
 
 class RecordingLogger:
@@ -133,6 +139,47 @@ class UltralyticsLoggingTest(unittest.TestCase):
 
         self.assertEqual(len(val_loader.dataset), 0)
         self.assertEqual(len(val_loader), 0)
+
+    def test_evaluate_drops_reversed_prediction_box(self):
+        class FakeYOLO:
+            def __init__(self, checkpoint):
+                pass
+
+            def predict(self, **kwargs):
+                boxes = SimpleNamespace(
+                    xyxy=torch.tensor(
+                        [
+                            [10.0, 2.0, 9.9281005859375, 10.0],
+                            [-1.0, 4.0, 12.0, 16.0],
+                        ]
+                    ),
+                    conf=torch.tensor([0.9, 0.8]),
+                    cls=torch.tensor([0.0, 0.0]),
+                )
+                return [SimpleNamespace(boxes=boxes)]
+
+        fake_ultralytics = ModuleType("ultralytics")
+        fake_ultralytics.YOLO = FakeYOLO
+        adapter = UltralyticsDetectionAdapter(
+            ModelConfig(key="yolo", backend="ultralytics", model_name_or_path="unused.pt")
+        )
+        artifact = ModelArtifact(
+            model_key=adapter.key,
+            backend=adapter.backend,
+            run_key="r",
+            classes=["car"],
+            label_mode="meta",
+        )
+
+        with patch.dict(sys.modules, {"ultralytics": fake_ultralytics}):
+            result = adapter.evaluate(
+                Dataset.from_list([row()]),
+                artifact,
+                EvalConfig(classes=["car"], preprocess=PreprocessConfig(image_size=32)),
+            )
+
+        self.assertEqual(result.num_predictions, 1)
+        self.assertEqual(result.meta["invalid_prediction_boxes_dropped"], 1)
 
     def test_controlled_protocol_disables_provider_augmentation_overrides(self):
         adapter = UltralyticsDetectionAdapter(

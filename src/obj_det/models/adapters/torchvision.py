@@ -21,14 +21,13 @@ from torchvision.models.detection.faster_rcnn import FastRCNNPredictor
 from torchvision.models.detection.retinanet import RetinaNetClassificationHead
 from transformers import Trainer, TrainerCallback
 
-from obj_det.datasets.models import BBox
 from obj_det.models.adapters.base import BaseModelAdapter
 from obj_det.models.data.bbox import area_xywh, xywh_to_xyxy
 from obj_det.models.data.loader import seed_worker_transform
 from obj_det.models.data.row_parser import HFDetectionRowParser
 from obj_det.models.data.sample import DetectionSample
 from obj_det.models.data.sample_source import DetectionSampleSource
-from obj_det.models.data.transforms import bbox_to_original, build_detection_transform
+from obj_det.models.data.transforms import canonicalize_prediction_bbox, build_detection_transform
 from obj_det.models.logging.base import BaseExperimentLogger
 from obj_det.models.logging.trainer_callback import make_transformers_logging_callback
 from obj_det.models.schemas.artifact import ModelArtifact
@@ -299,6 +298,7 @@ class TorchvisionDetectionAdapter(BaseModelAdapter):
                 image = _image_tensor(sample).to(device)
                 output = model([image])[0]
                 predictions = []
+                invalid_prediction_boxes_dropped = 0
                 preprocess = sample.meta.get("preprocess")
 
                 for box, label, score in zip(output["boxes"], output["labels"], output["scores"]):
@@ -309,10 +309,14 @@ class TorchvisionDetectionAdapter(BaseModelAdapter):
                     class_idx = spec.canonical_label(raw_label)
                     if class_idx < 0 or class_idx >= len(predict_cfg.classes):
                         continue
-                    bbox = BBox.from_xyxy([float(v) for v in box.detach().cpu().tolist()])
-                    if preprocess is not None:
-                        bbox = bbox_to_original(bbox, preprocess)
+                    bbox = canonicalize_prediction_bbox(
+                        box.detach().cpu().tolist(),
+                        image_width=sample.width,
+                        image_height=sample.height,
+                        preprocess=preprocess,
+                    )
                     if bbox is None:
+                        invalid_prediction_boxes_dropped += 1
                         continue
                     predictions.append(
                         PredictionObject(
@@ -331,6 +335,7 @@ class TorchvisionDetectionAdapter(BaseModelAdapter):
                     width=original.width,
                     height=original.height,
                     predictions=predictions,
+                    meta={"invalid_prediction_boxes_dropped": invalid_prediction_boxes_dropped},
                 )
 
     def _model_spec(self) -> _TorchvisionModelSpec:

@@ -37,6 +37,10 @@ class DetectionEvaluator:
         if stats:
             logger.info("Evaluation object filtering stats: %s", stats)
         pred_list = list(predictions)
+        invalid_prediction_boxes_dropped = sum(
+            int(record.meta.get("invalid_prediction_boxes_dropped", 0))
+            for record in pred_list
+        )
         max_detections = eval_cfg.max_detections_per_image
         metrics = self._evaluate_subset(
             samples,
@@ -112,6 +116,7 @@ class DetectionEvaluator:
                 "evaluation_protocol": "unified_harmonized",
                 "max_detections_per_image": max_detections,
                 "object_filtering_stats": stats,
+                "invalid_prediction_boxes_dropped": invalid_prediction_boxes_dropped,
             },
         )
 

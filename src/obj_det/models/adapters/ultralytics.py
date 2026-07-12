@@ -10,14 +10,13 @@ import torch
 from datasets import Dataset
 from torch.utils.data import DataLoader
 
-from obj_det.datasets.models import BBox
 from obj_det.models.adapters.base import BaseModelAdapter
 from obj_det.models.data.loader import dataloader_kwargs
 from obj_det.models.data.row_parser import HFDetectionRowParser
 from obj_det.models.data.row_batches import iter_hf_row_batches
 from obj_det.models.data.sample_source import DetectionSampleSource
 from obj_det.models.data.ultralytics_dataset import HFUltralyticsDetectionDataset, ultralytics_detection_collate
-from obj_det.models.data.transforms import bbox_to_original, build_detection_transform
+from obj_det.models.data.transforms import canonicalize_prediction_bbox, build_detection_transform
 from obj_det.models.logging.base import BaseExperimentLogger
 from obj_det.models.logging.metrics import flatten_prefixed_scalar_mapping
 from obj_det.models.schemas.artifact import ModelArtifact
@@ -176,16 +175,21 @@ class UltralyticsDetectionAdapter(BaseModelAdapter):
             for original, sample, result in zip(originals, samples, results):
                 preprocess = sample.meta.get("preprocess")
                 predictions: list[PredictionObject] = []
+                invalid_prediction_boxes_dropped = 0
                 boxes = result.boxes
                 if boxes is not None:
                     for xyxy, conf, cls in zip(boxes.xyxy, boxes.conf, boxes.cls):
                         class_idx = int(cls.detach().cpu())
                         if class_idx < 0 or class_idx >= len(predict_cfg.classes):
                             continue
-                        bbox = BBox.from_xyxy([float(value) for value in xyxy.detach().cpu().tolist()])
-                        if preprocess is not None:
-                            bbox = bbox_to_original(bbox, preprocess)
+                        bbox = canonicalize_prediction_bbox(
+                            xyxy.detach().cpu().tolist(),
+                            image_width=sample.width,
+                            image_height=sample.height,
+                            preprocess=preprocess,
+                        )
                         if bbox is None:
+                            invalid_prediction_boxes_dropped += 1
                             continue
                         predictions.append(
                             PredictionObject(
@@ -204,6 +208,7 @@ class UltralyticsDetectionAdapter(BaseModelAdapter):
                     width=original.width,
                     height=original.height,
                     predictions=predictions,
+                    meta={"invalid_prediction_boxes_dropped": invalid_prediction_boxes_dropped},
                 )
 
     def _train_overrides(self, train_cfg: TrainConfig) -> dict:

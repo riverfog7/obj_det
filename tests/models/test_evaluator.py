@@ -103,6 +103,38 @@ class EvaluatorTest(unittest.TestCase):
 
         self.assertEqual(result.primary_metric_value, 0.0)
 
+    def test_evaluation_aggregates_dropped_prediction_boxes(self):
+        ds = Dataset.from_list([row(image_id="img1"), row(image_id="img2")])
+        predictions = [
+            PredictionRecord(
+                image_id="img1",
+                dataset="tiny",
+                split="val",
+                model_key="dummy",
+                width=32,
+                height=24,
+                meta={"invalid_prediction_boxes_dropped": 1},
+            ),
+            PredictionRecord(
+                image_id="img2",
+                dataset="tiny",
+                split="val",
+                model_key="dummy",
+                width=32,
+                height=24,
+                meta={"invalid_prediction_boxes_dropped": 2},
+            ),
+        ]
+
+        result = DetectionEvaluator().evaluate(
+            ds,
+            predictions,
+            EvalConfig(classes=["car"], preprocess=PreprocessConfig(image_size=32)),
+            model_key="dummy",
+        )
+
+        self.assertEqual(result.meta["invalid_prediction_boxes_dropped"], 3)
+
     def test_evaluation_keeps_empty_images(self):
         ds = Dataset.from_list([row(objects=[])])
         result = DetectionEvaluator().evaluate(

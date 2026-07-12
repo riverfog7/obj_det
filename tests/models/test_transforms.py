@@ -5,7 +5,12 @@ import unittest
 import numpy as np
 
 from obj_det.models.data.row_parser import HFDetectionRowParser
-from obj_det.models.data.transforms import DetectionTransform, bbox_to_original, build_detection_transform
+from obj_det.models.data.transforms import (
+    DetectionTransform,
+    bbox_to_original,
+    build_detection_transform,
+    canonicalize_prediction_bbox,
+)
 from obj_det.datasets.models import BBox
 from obj_det.models.schemas import AugmentationConfig, PreprocessConfig
 
@@ -100,6 +105,41 @@ class TransformTest(unittest.TestCase):
                 restored_values = restored.xywh()
                 for expected, actual in zip(bbox, restored_values):
                     self.assertAlmostEqual(actual, expected, delta=1e-2)
+
+    def test_prediction_bbox_is_clipped_and_mapped_to_original_image(self):
+        sample = HFDetectionRowParser(["car"], "meta").parse(row(size=(32, 24)))
+        transformed = build_detection_transform(PreprocessConfig(image_size=64))(sample)
+
+        bbox = canonicalize_prediction_bbox(
+            [-1.0, -1.0, 65.0, 65.0],
+            image_width=64,
+            image_height=64,
+            preprocess=transformed.meta["preprocess"],
+        )
+
+        self.assertIsNotNone(bbox)
+        self.assertEqual(bbox.xywh(), (0.0, 0.0, 32.0, 24.0))
+
+    def test_prediction_bbox_drops_invalid_coordinates(self):
+        invalid_boxes = [
+            [1.0, 2.0, 3.0],
+            [10.0, 2.0, 9.9281005859375, 10.0],
+            [2.0, 10.0, 10.0, 9.0],
+            [2.0, 2.0, 2.0, 10.0],
+            [40.0, 2.0, 50.0, 10.0],
+            [float("nan"), 2.0, 10.0, 10.0],
+            [2.0, 2.0, float("inf"), 10.0],
+        ]
+
+        for box in invalid_boxes:
+            with self.subTest(box=box):
+                self.assertIsNone(
+                    canonicalize_prediction_bbox(
+                        box,
+                        image_width=32,
+                        image_height=24,
+                    )
+                )
 
     def test_basic_transform_allows_empty_targets(self):
         sample = HFDetectionRowParser(["car"], "meta").parse(row(size=(32, 24), objects=[]))

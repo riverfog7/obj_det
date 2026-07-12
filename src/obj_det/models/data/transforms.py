@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import math
 from dataclasses import replace
-from typing import Any
+from typing import Any, Sequence
 
 import albumentations as A
 import cv2
@@ -155,3 +156,30 @@ def bbox_to_original(bbox: BBox, preprocess: dict[str, Any]) -> BBox | None:
         return None
 
     return BBox.from_xyxy([x1, y1, x2, y2])
+
+
+def canonicalize_prediction_bbox(
+    xyxy: Sequence[float],
+    *,
+    image_width: int,
+    image_height: int,
+    preprocess: dict[str, Any] | None = None,
+) -> BBox | None:
+    if len(xyxy) != 4 or image_width <= 0 or image_height <= 0:
+        return None
+    try:
+        x1, y1, x2, y2 = map(float, xyxy)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    if not all(math.isfinite(value) for value in (x1, y1, x2, y2)):
+        return None
+
+    x1 = max(0.0, min(x1, float(image_width)))
+    y1 = max(0.0, min(y1, float(image_height)))
+    x2 = max(0.0, min(x2, float(image_width)))
+    y2 = max(0.0, min(y2, float(image_height)))
+    if x2 <= x1 or y2 <= y1:
+        return None
+
+    bbox = BBox.from_xyxy([x1, y1, x2, y2])
+    return bbox_to_original(bbox, preprocess) if preprocess is not None else bbox

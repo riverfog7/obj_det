@@ -7,14 +7,13 @@ import numpy as np
 import torch
 from datasets import Dataset
 
-from obj_det.datasets.models import BBox
 from obj_det.models.adapters.base import BaseModelAdapter
 from obj_det.models.data.hf_dataset import HFTrainerDetectionDataset
 from obj_det.models.data.hf_targets import make_hf_detection_collate
 from obj_det.models.data.row_parser import HFDetectionRowParser
 from obj_det.models.data.row_batches import iter_hf_row_batches
 from obj_det.models.data.sample_source import DetectionSampleSource
-from obj_det.models.data.transforms import bbox_to_original, build_detection_transform
+from obj_det.models.data.transforms import canonicalize_prediction_bbox, build_detection_transform
 from obj_det.models.logging.base import BaseExperimentLogger
 from obj_det.models.logging.trainer_callback import make_transformers_logging_callback
 from obj_det.models.schemas.artifact import ModelArtifact
@@ -293,6 +292,7 @@ class HFTrainerDetectionAdapter(BaseModelAdapter):
                 for original, sample, result in zip(original_samples, samples, results):
                     preprocess = sample.meta.get("preprocess")
                     predictions: list[PredictionObject] = []
+                    invalid_prediction_boxes_dropped = 0
                     order = torch.argsort(result["scores"], descending=True)[: predict_cfg.max_detections_per_image]
                     boxes = result["boxes"][order]
                     scores = result["scores"][order]
@@ -301,10 +301,14 @@ class HFTrainerDetectionAdapter(BaseModelAdapter):
                         class_idx = int(label.detach().cpu())
                         if class_idx < 0 or class_idx >= len(predict_cfg.classes):
                             continue
-                        bbox = BBox.from_xyxy([float(value) for value in box.detach().cpu().tolist()])
-                        if preprocess is not None:
-                            bbox = bbox_to_original(bbox, preprocess)
+                        bbox = canonicalize_prediction_bbox(
+                            box.detach().cpu().tolist(),
+                            image_width=sample.width,
+                            image_height=sample.height,
+                            preprocess=preprocess,
+                        )
                         if bbox is None:
+                            invalid_prediction_boxes_dropped += 1
                             continue
                         predictions.append(
                             PredictionObject(
@@ -323,6 +327,7 @@ class HFTrainerDetectionAdapter(BaseModelAdapter):
                         width=original.width,
                         height=original.height,
                         predictions=predictions,
+                        meta={"invalid_prediction_boxes_dropped": invalid_prediction_boxes_dropped},
                     )
 
     def _training_args(self, train_cfg: TrainConfig, *, epoch_eval_enabled: bool = False):
