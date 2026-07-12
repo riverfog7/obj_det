@@ -36,28 +36,24 @@ class TuningRunner:
         except ImportError as exc:
             raise ImportError("Install optuna to use TuningRunner.") from exc
 
-        if base_train_cfg.protocol in {"controlled", "equal_hpo"}:
-            require_single_process(context="Controlled HPO")
-            if tuning_cfg.early_stopping:
-                raise ValueError("Controlled HPO requires early_stopping=false")
-            names = set(search_space.params)
-            if names != {"learning_rate"}:
-                raise ValueError(
-                    "Controlled HPO must sample only canonical 'learning_rate'; "
-                    f"received parameters: {sorted(names)}"
-                )
+        require_single_process(context="Controlled HPO")
+        if tuning_cfg.early_stopping:
+            raise ValueError("Controlled HPO requires early_stopping=false")
+        names = set(search_space.params)
+        if names != {"learning_rate"}:
+            raise ValueError(
+                "Controlled HPO must sample only canonical 'learning_rate'; "
+                f"received parameters: {sorted(names)}"
+            )
 
         tuning_cfg.output_dir.mkdir(parents=True, exist_ok=True)
         sampler = self._build_sampler(tuning_cfg, optuna)
         pruner = self._build_pruner(tuning_cfg, optuna)
-        storage = None if base_train_cfg.protocol in {"controlled", "equal_hpo"} else tuning_cfg.storage
         study = optuna.create_study(
             study_name=tuning_cfg.study_name,
             direction=tuning_cfg.direction,
             sampler=sampler,
             pruner=pruner,
-            storage=storage,
-            load_if_exists=bool(storage),
         )
         trial_results: list[TrialResult] = []
         trial_hparams: dict[int, dict[str, Any]] = {}

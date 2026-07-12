@@ -41,12 +41,11 @@ def run_final_seeds(
 ) -> list[FinalSeedRun]:
     """Train/evaluate final runs for fixed seeds without choosing a best seed."""
 
-    if base_train_cfg.protocol in {"controlled", "equal_hpo"} and "learning_rate" not in hparams:
+    if "learning_rate" not in hparams:
         raise ValueError(
             "Controlled final training requires canonical 'learning_rate' in the selected HPO parameters"
         )
-    if base_train_cfg.protocol in {"controlled", "equal_hpo"}:
-        require_single_process(context="Controlled final-seed orchestration")
+    require_single_process(context="Controlled final-seed orchestration")
 
     runs: list[FinalSeedRun] = []
     final_hparams = {**base_train_cfg.hparams, **hparams}

@@ -44,8 +44,7 @@ class HFTrainerDetectionAdapter(BaseModelAdapter):
         logger: BaseExperimentLogger | None = None,
         log_prefix: str = "train",
     ) -> ModelArtifact:
-        if train_cfg.protocol in {"controlled", "equal_hpo"}:
-            require_single_process(context="Controlled HF Trainer training")
+        require_single_process(context="Controlled HF Trainer training")
         try:
             from transformers import AutoImageProcessor, AutoModelForObjectDetection, Trainer, TrainerCallback, TrainingArguments
         except ImportError as exc:
@@ -80,8 +79,6 @@ class HFTrainerDetectionAdapter(BaseModelAdapter):
         args = self._training_args(train_cfg, epoch_eval_enabled=epoch_eval_cfg is not None)
         checkpoint_state = CheckpointState(train_cfg.output_dir)
         adapter = self
-        shared_protocol = train_cfg.protocol in {"controlled", "equal_hpo"}
-
         class ProtocolTrainer(Trainer):
             def __init__(self, *args, protocol_processor, **kwargs):
                 self.protocol_processor = protocol_processor
@@ -89,8 +86,6 @@ class HFTrainerDetectionAdapter(BaseModelAdapter):
                 super().__init__(*args, **kwargs)
 
             def create_optimizer(self, model=None):
-                if not shared_protocol:
-                    return super().create_optimizer(model)
                 if self.optimizer is not None:
                     return self.optimizer
                 model = self.model if model is None else model
@@ -105,8 +100,6 @@ class HFTrainerDetectionAdapter(BaseModelAdapter):
                 return self.optimizer
 
             def create_scheduler(self, num_training_steps: int, optimizer=None):
-                if not shared_protocol:
-                    return super().create_scheduler(num_training_steps, optimizer)
                 if self.lr_scheduler is not None:
                     return self.lr_scheduler
                 optimizer = optimizer or self.optimizer
@@ -127,7 +120,7 @@ class HFTrainerDetectionAdapter(BaseModelAdapter):
 
             def _maybe_log_save_evaluate(self, *method_args, **method_kwargs):
                 super()._maybe_log_save_evaluate(*method_args, **method_kwargs)
-                if not shared_protocol or epoch_eval_cfg is None or self.state.epoch is None:
+                if epoch_eval_cfg is None or self.state.epoch is None:
                     return
                 epoch = int(round(float(self.state.epoch)))
                 if epoch <= self.protocol_last_epoch or abs(float(self.state.epoch) - epoch) > 1.0e-6:
@@ -214,22 +207,11 @@ class HFTrainerDetectionAdapter(BaseModelAdapter):
                 if "train_loss" in row:
                     train_loss = float(row["train_loss"])
                     break
-        if shared_protocol:
-            optimizer_meta = {
-                **train_cfg.optimizer.model_dump(mode="json"),
-                "learning_rate": float(train_cfg.hparams.get("learning_rate", 5.0e-5)),
-            }
-            scheduler_meta = train_cfg.scheduler.model_dump(mode="json")
-        else:
-            optimizer_meta = {
-                "name": "trainer_default_adamw",
-                "learning_rate": float(train_cfg.hparams.get("learning_rate", 5.0e-5)),
-                "weight_decay": float(train_cfg.hparams.get("weight_decay", 0.0)),
-            }
-            scheduler_meta = {
-                "name": train_cfg.hparams.get("lr_scheduler_type", "linear"),
-                "warmup_ratio": float(train_cfg.hparams.get("warmup_ratio", 0.0)),
-            }
+        optimizer_meta = {
+            **train_cfg.optimizer.model_dump(mode="json"),
+            "learning_rate": float(train_cfg.hparams.get("learning_rate", 5.0e-5)),
+        }
+        scheduler_meta = train_cfg.scheduler.model_dump(mode="json")
 
         return ModelArtifact(
             model_key=self.key,
@@ -363,25 +345,13 @@ class HFTrainerDetectionAdapter(BaseModelAdapter):
         if loader.num_workers > 0 and loader.prefetch_factor is not None:
             loader_args["dataloader_prefetch_factor"] = loader.prefetch_factor
 
-        shared_protocol = train_cfg.protocol in {"controlled", "equal_hpo"}
-        if shared_protocol:
-            weight_decay = float(train_cfg.optimizer.weight_decay)
-            warmup_ratio = 0.0
-            scheduler_type = "constant"
-            eval_strategy = "no"
-            save_strategy = (
-                "epoch"
-                if max_steps < 0
-                and train_cfg.checkpoint.save_every_epochs == 1
-                and (epoch_eval_enabled or train_cfg.checkpoint.keep_all_epoch_checkpoints)
-                else "no"
-            )
-        else:
-            weight_decay = float(hparams.get("weight_decay", 0.0))
-            warmup_ratio = float(hparams.get("warmup_ratio", 0.0))
-            scheduler_type = hparams.get("lr_scheduler_type", "linear")
-            eval_strategy = self._eval_strategy_args(train_cfg)["eval_strategy"]
-            save_strategy = "epoch" if max_steps < 0 else "no"
+        save_strategy = (
+            "epoch"
+            if max_steps < 0
+            and train_cfg.checkpoint.save_every_epochs == 1
+            and (epoch_eval_enabled or train_cfg.checkpoint.keep_all_epoch_checkpoints)
+            else "no"
+        )
 
         return TrainingArguments(
             output_dir=str(train_cfg.output_dir),
@@ -391,13 +361,13 @@ class HFTrainerDetectionAdapter(BaseModelAdapter):
             per_device_eval_batch_size=train_cfg.batch_size,
             gradient_accumulation_steps=train_cfg.gradient_accumulation_steps,
             learning_rate=float(hparams.get("learning_rate", 5e-5)),
-            weight_decay=weight_decay,
-            warmup_ratio=warmup_ratio,
-            lr_scheduler_type=scheduler_type,
+            weight_decay=float(train_cfg.optimizer.weight_decay),
+            warmup_ratio=0.0,
+            lr_scheduler_type="constant",
             max_grad_norm=float(hparams.get("max_grad_norm", 1.0)),
             seed=train_cfg.seed,
             fp16=bool(train_cfg.amp and torch.cuda.is_available()),
-            eval_strategy=eval_strategy,
+            eval_strategy="no",
             save_strategy=save_strategy,
             logging_strategy="steps",
             logging_steps=train_cfg.logging_steps,
@@ -407,15 +377,6 @@ class HFTrainerDetectionAdapter(BaseModelAdapter):
             **loader_args,
             **backend_args,
         )
-
-    def _eval_strategy_args(self, train_cfg: TrainConfig) -> dict[str, str]:
-        if not train_cfg.eval_strategy.enabled:
-            return {"eval_strategy": "no"}
-
-        if train_cfg.eval_strategy.every_epochs != 1:
-            raise NotImplementedError("HF Trainer eval_strategy currently supports every_epochs=1 only")
-
-        return {"eval_strategy": "epoch"}
 
     def _label_maps(self, classes: list[str]) -> tuple[dict[int, str], dict[str, int]]:
         id2label = {idx: label for idx, label in enumerate(classes)}

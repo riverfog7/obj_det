@@ -25,8 +25,9 @@ from .helpers import row
 
 
 class DummyAdapter(BaseModelAdapter):
-    def __init__(self):
+    def __init__(self, *, fail_train_calls: set[int] | None = None):
         super().__init__(ModelConfig(key="dummy", backend="torchvision", model_name_or_path="x"))
+        self.fail_train_calls = set(fail_train_calls or ())
         self.trained = []
         self.train_configs = []
         self.epoch_eval_configs = []
@@ -38,7 +39,7 @@ class DummyAdapter(BaseModelAdapter):
         self.epoch_eval_configs.append(epoch_eval_cfg)
         if logger is not None:
             logger.log_metrics({f"{log_prefix}/dummy_loss": 1.0})
-        if train_cfg.hparams.get("fail"):
+        if len(self.trained) - 1 in self.fail_train_calls:
             raise RuntimeError("planned failure")
         return ModelArtifact(
             model_key=self.key,
@@ -51,7 +52,7 @@ class DummyAdapter(BaseModelAdapter):
 
     def evaluate(self, ds, artifact, eval_cfg, *, logger=None, log_prefix=None):
         self.evaluated.append(ds)
-        value = float(self.trained[-1][1].get("score", 0.0))
+        value = float(self.trained[-1][1].get("learning_rate", 0.0))
         result = EvalResult(
             model_key=self.key,
             primary_metric="map_50_95",
@@ -158,6 +159,19 @@ class FakeOptuna(types.ModuleType):
         return self.study
 
 
+def learning_rate_search_space() -> SearchSpace:
+    return SearchSpace(
+        params={
+            "learning_rate": {
+                "type": "float",
+                "low": 1.0e-6,
+                "high": 1.0,
+                "log": True,
+            }
+        }
+    )
+
+
 class RecordingLogger:
     def __init__(self, default_log_path: Path | None = None):
         self.default_log_path = default_log_path
@@ -224,24 +238,21 @@ class TuningTest(unittest.TestCase):
 
     def test_hpo_records_failed_trial_and_selects_best(self):
         sys.modules["optuna"] = FakeOptuna([
-            {"score": 0.1, "fail": True},
-            {"score": 0.3, "fail": False},
-            {"score": 0.2, "fail": False},
+            {"learning_rate": 0.1},
+            {"learning_rate": 0.3},
+            {"learning_rate": 0.2},
         ])
         ds = Dataset.from_list([row()])
-        adapter = DummyAdapter()
+        adapter = DummyAdapter(fail_train_calls={0})
         with TemporaryDirectory() as tmp:
             preprocess = PreprocessConfig(image_size=32)
             result = TuningRunner().optimize(
                 adapter=adapter,
                 train_ds=ds,
                 val_ds=ds,
-                base_train_cfg=TrainConfig(run_key="r", classes=["car"], output_dir=Path(tmp) / "base", preprocess=preprocess, protocol="ecosystem"),
+                base_train_cfg=TrainConfig(run_key="r", classes=["car"], output_dir=Path(tmp) / "base", preprocess=preprocess),
                 eval_cfg=EvalConfig(classes=["car"], preprocess=preprocess),
-                search_space=SearchSpace(params={
-                    "score": {"type": "float", "low": 0.0, "high": 1.0},
-                    "fail": {"type": "categorical", "choices": [True, False]},
-                }),
+                search_space=learning_rate_search_space(),
                 tuning_cfg=TuningConfig(study_name="s", n_trials=3, output_dir=Path(tmp), catch_trial_errors=True),
             )
 
@@ -253,11 +264,11 @@ class TuningTest(unittest.TestCase):
 
     def test_hpo_fails_fast_by_default(self):
         sys.modules["optuna"] = FakeOptuna([
-            {"score": 0.1, "fail": True},
-            {"score": 0.3, "fail": False},
+            {"learning_rate": 0.1},
+            {"learning_rate": 0.3},
         ])
         ds = Dataset.from_list([row()])
-        adapter = DummyAdapter()
+        adapter = DummyAdapter(fail_train_calls={0})
         with TemporaryDirectory() as tmp:
             preprocess = PreprocessConfig(image_size=32)
             with self.assertRaises(RuntimeError):
@@ -265,12 +276,9 @@ class TuningTest(unittest.TestCase):
                     adapter=adapter,
                     train_ds=ds,
                     val_ds=ds,
-                    base_train_cfg=TrainConfig(run_key="r", classes=["car"], output_dir=Path(tmp) / "base", preprocess=preprocess, protocol="ecosystem"),
+                    base_train_cfg=TrainConfig(run_key="r", classes=["car"], output_dir=Path(tmp) / "base", preprocess=preprocess),
                     eval_cfg=EvalConfig(classes=["car"], preprocess=preprocess),
-                    search_space=SearchSpace(params={
-                        "score": {"type": "float", "low": 0.0, "high": 1.0},
-                        "fail": {"type": "categorical", "choices": [True, False]},
-                    }),
+                    search_space=learning_rate_search_space(),
                     tuning_cfg=TuningConfig(study_name="s", n_trials=2, output_dir=Path(tmp)),
                 )
 
@@ -278,7 +286,7 @@ class TuningTest(unittest.TestCase):
 
     def test_hpo_stores_sampled_hparams_and_resolved_training_config(self):
         sys.modules["optuna"] = FakeOptuna([
-            {"score": 0.3, "fail": False},
+            {"learning_rate": 0.3},
         ])
         ds = Dataset.from_list([row()])
         adapter = DummyAdapter()
@@ -293,20 +301,16 @@ class TuningTest(unittest.TestCase):
                     classes=["car"],
                     output_dir=Path(tmp) / "base",
                     preprocess=preprocess,
-                    protocol="ecosystem",
                     hparams={"warmup_epochs": 3},
                 ),
                 eval_cfg=EvalConfig(classes=["car"], preprocess=preprocess),
-                search_space=SearchSpace(params={
-                    "score": {"type": "float", "low": 0.0, "high": 1.0},
-                    "fail": {"type": "categorical", "choices": [True, False]},
-                }),
+                search_space=learning_rate_search_space(),
                 tuning_cfg=TuningConfig(study_name="s", n_trials=1, output_dir=Path(tmp)),
             )
 
-        expected = {"warmup_epochs": 3, "score": 0.3, "fail": False}
+        expected = {"warmup_epochs": 3, "learning_rate": 0.3}
         self.assertEqual(adapter.trained[0][1], expected)
-        sampled = {"score": 0.3, "fail": False}
+        sampled = {"learning_rate": 0.3}
         self.assertEqual(result.trials[0].hparams, sampled)
         self.assertEqual(result.best_trial.hparams, sampled)
         self.assertEqual(result.best_trial.resolved_train_config["hparams"], expected)
@@ -357,7 +361,11 @@ class TuningTest(unittest.TestCase):
                         }
                     }
                 ),
-                tuning_cfg=TuningConfig(study_name="s", output_dir=root),
+                tuning_cfg=TuningConfig(
+                    study_name="s",
+                    output_dir=root,
+                    storage="sqlite:///ignored.db",
+                ),
             )
 
             checkpoints = sorted(root.glob("trial_*/checkpoints/epoch_010.pt"))
@@ -366,8 +374,8 @@ class TuningTest(unittest.TestCase):
         self.assertEqual(len(result.trials), 8)
         self.assertEqual(len(checkpoints), 8)
         self.assertEqual(fake_optuna.sampler_calls, [("tpe", 0, {"n_startup_trials": 3})])
-        self.assertIsNone(fake_optuna.create_study_kwargs["storage"])
-        self.assertFalse(fake_optuna.create_study_kwargs["load_if_exists"])
+        self.assertNotIn("storage", fake_optuna.create_study_kwargs)
+        self.assertNotIn("load_if_exists", fake_optuna.create_study_kwargs)
         for train_cfg, epoch_eval_cfg, trial_result, fake_trial in zip(
             adapter.train_configs,
             adapter.epoch_eval_configs,
@@ -462,7 +470,7 @@ class TuningTest(unittest.TestCase):
                 return super().evaluate(ds, artifact, eval_cfg, logger=logger, log_prefix=log_prefix)
 
         sys.modules["optuna"] = FakeOptuna([
-            {"score": 0.3, "fail": False},
+            {"learning_rate": 0.3},
         ])
         ds = Dataset.from_list([row()])
         adapter = EvalConfigRecordingAdapter()
@@ -472,7 +480,7 @@ class TuningTest(unittest.TestCase):
                 adapter=adapter,
                 train_ds=ds,
                 val_ds=ds,
-                base_train_cfg=TrainConfig(run_key="r", classes=["car"], output_dir=Path(tmp) / "base", preprocess=preprocess, protocol="ecosystem"),
+                base_train_cfg=TrainConfig(run_key="r", classes=["car"], output_dir=Path(tmp) / "base", preprocess=preprocess),
                 eval_cfg=EvalConfig(
                     classes=["car"],
                     preprocess=preprocess,
@@ -481,10 +489,7 @@ class TuningTest(unittest.TestCase):
                     compute_per_domain=True,
                     compute_per_size=True,
                 ),
-                search_space=SearchSpace(params={
-                    "score": {"type": "float", "low": 0.0, "high": 1.0},
-                    "fail": {"type": "categorical", "choices": [True, False]},
-                }),
+                search_space=learning_rate_search_space(),
                 tuning_cfg=TuningConfig(study_name="s", n_trials=1, output_dir=Path(tmp)),
             )
 
@@ -506,7 +511,7 @@ class TuningTest(unittest.TestCase):
                 return super().evaluate(ds, artifact, eval_cfg, logger=logger, log_prefix=log_prefix)
 
         sys.modules["optuna"] = FakeOptuna([
-            {"score": 0.3, "fail": False},
+            {"learning_rate": 0.3},
         ])
         ds = Dataset.from_list([row()])
         adapter = EvalConfigRecordingAdapter()
@@ -516,12 +521,9 @@ class TuningTest(unittest.TestCase):
                 adapter=adapter,
                 train_ds=ds,
                 val_ds=ds,
-                base_train_cfg=TrainConfig(run_key="r", classes=["car"], output_dir=Path(tmp) / "base", preprocess=preprocess, protocol="ecosystem"),
+                base_train_cfg=TrainConfig(run_key="r", classes=["car"], output_dir=Path(tmp) / "base", preprocess=preprocess),
                 eval_cfg=EvalConfig(classes=["car"], preprocess=preprocess, compute_per_class=True),
-                search_space=SearchSpace(params={
-                    "score": {"type": "float", "low": 0.0, "high": 1.0},
-                    "fail": {"type": "categorical", "choices": [True, False]},
-                }),
+                search_space=learning_rate_search_space(),
                 tuning_cfg=TuningConfig(study_name="s", n_trials=1, output_dir=Path(tmp), detailed_eval=True),
             )
 
@@ -529,7 +531,7 @@ class TuningTest(unittest.TestCase):
 
     def test_hpo_logs_trial_train_eval_and_objective(self):
         sys.modules["optuna"] = FakeOptuna([
-            {"score": 0.3, "fail": False},
+            {"learning_rate": 0.3},
         ])
         ds = Dataset.from_list([row()])
         adapter = DummyAdapter()
@@ -540,12 +542,9 @@ class TuningTest(unittest.TestCase):
                 adapter=adapter,
                 train_ds=ds,
                 val_ds=ds,
-                base_train_cfg=TrainConfig(run_key="r", classes=["car"], output_dir=Path(tmp) / "base", preprocess=preprocess, protocol="ecosystem"),
+                base_train_cfg=TrainConfig(run_key="r", classes=["car"], output_dir=Path(tmp) / "base", preprocess=preprocess),
                 eval_cfg=EvalConfig(classes=["car"], preprocess=preprocess),
-                search_space=SearchSpace(params={
-                    "score": {"type": "float", "low": 0.0, "high": 1.0},
-                    "fail": {"type": "categorical", "choices": [True, False]},
-                }),
+                search_space=learning_rate_search_space(),
                 tuning_cfg=TuningConfig(study_name="s", n_trials=1, output_dir=Path(tmp)),
                 run_config={"experiment": "cfg"},
             )
@@ -556,7 +555,7 @@ class TuningTest(unittest.TestCase):
         self.assertEqual(logger.default_log_path, Path(tmp) / "trial_0000" / "logs" / "events.jsonl")
         self.assertEqual(logger.events[0][0], "start_run")
         self.assertEqual(logger.events[0][2]["trial"]["number"], 0)
-        self.assertEqual(logger.events[0][2]["trial"]["hparams"]["score"], 0.3)
+        self.assertEqual(logger.events[0][2]["trial"]["hparams"]["learning_rate"], 0.3)
         metric_events = [event for event in logger.events if event[0] == "metrics"]
         self.assertTrue(any("train/dummy_loss" in event[1] for event in metric_events))
         self.assertTrue(any("objective/map_50_95" in event[1] for event in metric_events))
@@ -565,11 +564,11 @@ class TuningTest(unittest.TestCase):
 
     def test_hpo_failed_trial_gets_own_failed_run(self):
         sys.modules["optuna"] = FakeOptuna([
-            {"score": 0.1, "fail": True},
-            {"score": 0.3, "fail": False},
+            {"learning_rate": 0.1},
+            {"learning_rate": 0.3},
         ])
         ds = Dataset.from_list([row()])
-        adapter = DummyAdapter()
+        adapter = DummyAdapter(fail_train_calls={0})
         logger_factory = RecordingLoggerFactory()
         with TemporaryDirectory() as tmp:
             preprocess = PreprocessConfig(image_size=32)
@@ -577,12 +576,9 @@ class TuningTest(unittest.TestCase):
                 adapter=adapter,
                 train_ds=ds,
                 val_ds=ds,
-                base_train_cfg=TrainConfig(run_key="r", classes=["car"], output_dir=Path(tmp) / "base", preprocess=preprocess, protocol="ecosystem"),
+                base_train_cfg=TrainConfig(run_key="r", classes=["car"], output_dir=Path(tmp) / "base", preprocess=preprocess),
                 eval_cfg=EvalConfig(classes=["car"], preprocess=preprocess),
-                search_space=SearchSpace(params={
-                    "score": {"type": "float", "low": 0.0, "high": 1.0},
-                    "fail": {"type": "categorical", "choices": [True, False]},
-                }),
+                search_space=learning_rate_search_space(),
                 tuning_cfg=TuningConfig(study_name="s", n_trials=2, output_dir=Path(tmp), catch_trial_errors=True),
             )
 
@@ -593,7 +589,7 @@ class TuningTest(unittest.TestCase):
 
     def test_hpo_writes_local_child_log_file(self):
         sys.modules["optuna"] = FakeOptuna([
-            {"score": 0.3, "fail": False},
+            {"learning_rate": 0.3},
         ])
         ds = Dataset.from_list([row()])
         adapter = DummyAdapter()
@@ -605,12 +601,9 @@ class TuningTest(unittest.TestCase):
                 adapter=adapter,
                 train_ds=ds,
                 val_ds=ds,
-                base_train_cfg=TrainConfig(run_key="r", classes=["car"], output_dir=root / "base", preprocess=preprocess, protocol="ecosystem"),
+                base_train_cfg=TrainConfig(run_key="r", classes=["car"], output_dir=root / "base", preprocess=preprocess),
                 eval_cfg=EvalConfig(classes=["car"], preprocess=preprocess),
-                search_space=SearchSpace(params={
-                    "score": {"type": "float", "low": 0.0, "high": 1.0},
-                    "fail": {"type": "categorical", "choices": [True, False]},
-                }),
+                search_space=learning_rate_search_space(),
                 tuning_cfg=TuningConfig(study_name="s", n_trials=1, output_dir=root / "hpo"),
             )
             log_path = root / "hpo" / "trial_0000" / "logs" / "events.jsonl"

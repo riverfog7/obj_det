@@ -111,8 +111,7 @@ class TorchvisionDetectionAdapter(BaseModelAdapter):
         logger: BaseExperimentLogger | None = None,
         log_prefix: str = "train",
     ) -> ModelArtifact:
-        if train_cfg.protocol in {"controlled", "equal_hpo"}:
-            require_single_process(context="Controlled TorchVision training")
+        require_single_process(context="Controlled TorchVision training")
         set_seed(train_cfg.seed)
         train_cfg.output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -131,8 +130,6 @@ class TorchvisionDetectionAdapter(BaseModelAdapter):
         train_source = DetectionSampleSource(train_ds, parser, predecode_images=train_cfg.loader.predecode_images)
         val_source = DetectionSampleSource(val_ds, parser, predecode_images=train_cfg.loader.predecode_images)
         checkpoint_state = CheckpointState(train_cfg.output_dir)
-        shared_protocol = train_cfg.protocol in {"controlled", "equal_hpo"}
-
         def epoch_callback(protocol_trainer, epoch: int) -> bool:
             max_epochs = int(train_cfg.max_epochs or 1)
             should_save = (
@@ -189,7 +186,7 @@ class TorchvisionDetectionAdapter(BaseModelAdapter):
             eval_dataset=_TorchvisionTrainerDataset(val_source, eval_transform, spec),
             data_collator=_torchvision_collate,
             train_cfg=train_cfg,
-            epoch_callback=epoch_callback if shared_protocol else None,
+            epoch_callback=epoch_callback,
             callbacks=[make_transformers_logging_callback(TrainerCallback, logger, log_prefix)] if logger else None,
         )
         trainer.train()
@@ -229,27 +226,11 @@ class TorchvisionDetectionAdapter(BaseModelAdapter):
                 if "train_loss" in row:
                     train_loss = float(row["train_loss"])
                     break
-        if shared_protocol:
-            optimizer_meta = {
-                **train_cfg.optimizer.model_dump(mode="json"),
-                "learning_rate": float(
-                    train_cfg.hparams.get("learning_rate", train_cfg.hparams.get("lr", 0.001))
-                ),
-            }
-            scheduler_meta = train_cfg.scheduler.model_dump(mode="json")
-        else:
-            optimizer_meta = {
-                "name": str(train_cfg.hparams.get("optimizer", "sgd")).lower(),
-                "learning_rate": float(
-                    train_cfg.hparams.get("learning_rate", train_cfg.hparams.get("lr", 0.001))
-                ),
-                "weight_decay": float(train_cfg.hparams.get("weight_decay", 0.0005)),
-                "momentum": float(train_cfg.hparams.get("momentum", 0.9)),
-            }
-            scheduler_meta = {
-                "name": train_cfg.hparams.get("lr_scheduler_type", "linear"),
-                "warmup_ratio": float(train_cfg.hparams.get("warmup_ratio", 0.0)),
-            }
+        optimizer_meta = {
+            **train_cfg.optimizer.model_dump(mode="json"),
+            "learning_rate": float(train_cfg.hparams.get("learning_rate", 0.001)),
+        }
+        scheduler_meta = train_cfg.scheduler.model_dump(mode="json")
 
         return ModelArtifact(
             model_key=self.key,
@@ -545,20 +526,6 @@ class TorchvisionDetectionAdapter(BaseModelAdapter):
         if loader.num_workers > 0 and loader.prefetch_factor is not None:
             loader_args["dataloader_prefetch_factor"] = loader.prefetch_factor
 
-        shared_protocol = train_cfg.protocol in {"controlled", "equal_hpo"}
-        if shared_protocol:
-            weight_decay = float(train_cfg.optimizer.weight_decay)
-            warmup_ratio = 0.0
-            scheduler_type = "constant"
-            eval_strategy = "no"
-            save_strategy = "no"
-        else:
-            weight_decay = float(hparams.get("weight_decay", 0.0005))
-            warmup_ratio = float(hparams.get("warmup_ratio", 0.0))
-            scheduler_type = hparams.get("lr_scheduler_type", "linear")
-            eval_strategy = self._eval_strategy(train_cfg)
-            save_strategy = "epoch" if max_steps < 0 else "no"
-
         return TrainingArguments(
             output_dir=str(train_cfg.output_dir),
             num_train_epochs=epochs,
@@ -566,15 +533,15 @@ class TorchvisionDetectionAdapter(BaseModelAdapter):
             per_device_train_batch_size=train_cfg.batch_size,
             per_device_eval_batch_size=train_cfg.batch_size,
             gradient_accumulation_steps=train_cfg.gradient_accumulation_steps,
-            learning_rate=float(hparams.get("learning_rate", hparams.get("lr", 0.001))),
-            weight_decay=weight_decay,
-            warmup_ratio=warmup_ratio,
-            lr_scheduler_type=scheduler_type,
+            learning_rate=float(hparams.get("learning_rate", 0.001)),
+            weight_decay=float(train_cfg.optimizer.weight_decay),
+            warmup_ratio=0.0,
+            lr_scheduler_type="constant",
             max_grad_norm=float(hparams.get("max_grad_norm", 1.0)),
             seed=train_cfg.seed,
             fp16=bool(train_cfg.amp and torch.cuda.is_available()),
-            eval_strategy=eval_strategy,
-            save_strategy=save_strategy,
+            eval_strategy="no",
+            save_strategy="no",
             logging_strategy="steps",
             logging_steps=train_cfg.logging_steps,
             report_to=[],
@@ -583,13 +550,6 @@ class TorchvisionDetectionAdapter(BaseModelAdapter):
             **loader_args,
             **backend_args,
         )
-
-    def _eval_strategy(self, train_cfg: TrainConfig) -> str:
-        if not train_cfg.eval_strategy.enabled:
-            return "no"
-        if train_cfg.eval_strategy.every_epochs != 1:
-            raise NotImplementedError("TorchVision HF Trainer eval_strategy currently supports every_epochs=1 only")
-        return "epoch"
 
     def _device(self, params: dict) -> torch.device:
         requested = params.get("device")
@@ -636,27 +596,7 @@ class _TorchvisionTrainer(Trainer):
 
         model = self.model if model is None else model
         hparams = self.train_cfg.hparams
-        lr = float(hparams.get("learning_rate", hparams.get("lr", 0.001)))
-        if self.train_cfg.protocol not in {"controlled", "equal_hpo"}:
-            parameters = [parameter for parameter in model.parameters() if parameter.requires_grad]
-            optimizer_name = str(hparams.get("optimizer", "sgd")).lower()
-            weight_decay = float(hparams.get("weight_decay", 0.0005))
-            if optimizer_name == "adamw":
-                self.optimizer = torch.optim.AdamW(
-                    parameters,
-                    lr=lr,
-                    weight_decay=weight_decay,
-                )
-            elif optimizer_name == "sgd":
-                self.optimizer = torch.optim.SGD(
-                    parameters,
-                    lr=lr,
-                    momentum=float(hparams.get("momentum", 0.9)),
-                    weight_decay=weight_decay,
-                )
-            else:
-                raise ValueError(f"Unsupported TorchVision optimizer: {optimizer_name}")
-            return self.optimizer
+        lr = float(hparams.get("learning_rate", 0.001))
 
         cfg = self.train_cfg.optimizer
         params = build_adamw_param_groups(model, weight_decay=cfg.weight_decay)
@@ -670,8 +610,6 @@ class _TorchvisionTrainer(Trainer):
         return self.optimizer
 
     def create_scheduler(self, num_training_steps: int, optimizer=None):
-        if self.train_cfg.protocol not in {"controlled", "equal_hpo"}:
-            return super().create_scheduler(num_training_steps, optimizer)
         if self.lr_scheduler is not None:
             return self.lr_scheduler
 

@@ -7,6 +7,7 @@ from tempfile import TemporaryDirectory
 from pydantic import ValidationError
 
 from obj_det.models.experiment import load_experiment_config
+from obj_det.models.schemas import PreprocessConfig, TrainConfig
 from obj_det.models.schemas.experiment import ExperimentConfig
 from obj_det.models.schemas.tuning import TuningConfig
 
@@ -79,6 +80,23 @@ class ExperimentConfigTest(unittest.TestCase):
         self.assertEqual(tuning.pruner, "none")
         self.assertEqual(tuning.objective_metric, "map_50_95")
         self.assertEqual(tuning.save_strategy, "final_only")
+
+        train_kwargs = {
+            "run_key": "r",
+            "classes": ["car"],
+            "output_dir": Path("runs/r"),
+            "preprocess": PreprocessConfig(image_size=32),
+        }
+        self.assertEqual(TrainConfig(**train_kwargs, protocol="equal_hpo").protocol, "equal_hpo")
+        with self.assertRaises(ValidationError):
+            TrainConfig(**train_kwargs, protocol="ecosystem")
+
+        storage_cfg = TuningConfig(
+            study_name="s",
+            output_dir=Path("runs/hpo"),
+            storage="sqlite:///legacy.db",
+        )
+        self.assertEqual(storage_cfg.storage, "sqlite:///legacy.db")
 
         with self.assertRaises(ValidationError):
             ExperimentConfig.model_validate(

@@ -167,31 +167,6 @@ class TorchvisionAdapterTest(unittest.TestCase):
         self.assertEqual(optimizer.defaults["eps"], 1.0e-7)
         self.assertEqual({group["weight_decay"] for group in optimizer.param_groups}, {0.0, 2.0e-4})
 
-    def test_ecosystem_trainer_preserves_legacy_sgd_hparams(self):
-        trainer = object.__new__(_TorchvisionTrainer)
-        trainer.model = torch.nn.Linear(2, 2)
-        trainer.train_cfg = TrainConfig(
-            run_key="r",
-            classes=["car"],
-            output_dir=Path("runs/test"),
-            preprocess=PreprocessConfig(image_size=32),
-            protocol="ecosystem",
-            hparams={
-                "optimizer": "sgd",
-                "learning_rate": 0.02,
-                "weight_decay": 0.003,
-                "momentum": 0.85,
-            },
-        )
-        trainer.optimizer = None
-
-        optimizer = trainer.create_optimizer()
-
-        self.assertIsInstance(optimizer, torch.optim.SGD)
-        self.assertEqual(optimizer.defaults["lr"], 0.02)
-        self.assertEqual(optimizer.defaults["weight_decay"], 0.003)
-        self.assertEqual(optimizer.defaults["momentum"], 0.85)
-
     def test_trainer_scheduler_uses_configured_fifty_epoch_horizon(self):
         trainer = object.__new__(_TorchvisionTrainer)
         trainer.model = torch.nn.Linear(2, 2)

@@ -101,8 +101,6 @@ class UltralyticsDetectionAdapter(BaseModelAdapter):
             )
         overrides = self._train_overrides(train_cfg)
         checkpoint_state = CheckpointState(train_cfg.output_dir)
-        shared_protocol = train_cfg.protocol in {"controlled", "equal_hpo"}
-
         trainer_cls = self._trainer_class(DetectionTrainer)
         trainer = trainer_cls(
             overrides=overrides,
@@ -120,7 +118,6 @@ class UltralyticsDetectionAdapter(BaseModelAdapter):
             gradient_accumulation_steps=train_cfg.gradient_accumulation_steps,
             optimizer_cfg=train_cfg.optimizer,
             scheduler_cfg=train_cfg.scheduler,
-            shared_protocol=shared_protocol,
             checkpoint_state=checkpoint_state,
             trial_final_only=(
                 epoch_eval_cfg is None
@@ -211,7 +208,6 @@ class UltralyticsDetectionAdapter(BaseModelAdapter):
 
     def _train_overrides(self, train_cfg: TrainConfig) -> dict:
         hparams = train_cfg.hparams
-        shared_protocol = train_cfg.protocol in {"controlled", "equal_hpo"}
         project = train_cfg.output_dir.parent if train_cfg.output_dir.parent != Path("") else Path(".")
         overrides = {
             "task": "detect",
@@ -221,11 +217,7 @@ class UltralyticsDetectionAdapter(BaseModelAdapter):
             "project": str(project),
             "name": train_cfg.output_dir.name,
             "exist_ok": True,
-            "epochs": int(
-                train_cfg.scheduler.total_epochs
-                if shared_protocol
-                else (train_cfg.max_epochs or 1)
-            ),
+            "epochs": int(train_cfg.scheduler.total_epochs),
             "imgsz": int(train_cfg.preprocess.image_size),
             "batch": int(train_cfg.batch_size),
             "seed": int(train_cfg.seed),
@@ -233,66 +225,39 @@ class UltralyticsDetectionAdapter(BaseModelAdapter):
             "workers": int(train_cfg.loader.num_workers),
             "val": False,
             "plots": False,
-            "save": (
-                bool(train_cfg.checkpoint.keep_all_epoch_checkpoints)
-                if shared_protocol
-                else True
-            ),
+            "save": bool(train_cfg.checkpoint.keep_all_epoch_checkpoints),
             "save_period": (
                 int(train_cfg.checkpoint.save_every_epochs)
-                if shared_protocol and train_cfg.checkpoint.keep_all_epoch_checkpoints
+                if train_cfg.checkpoint.keep_all_epoch_checkpoints
                 else -1
             ),
             "device": train_cfg.backend_params.get("device"),
-            "optimizer": (
-                "AdamW"
-                if shared_protocol
-                else hparams.get("optimizer", train_cfg.backend_params.get("optimizer", "auto"))
-            ),
-            "lr0": float(hparams.get("lr0", hparams.get("learning_rate", 0.01))),
-            "lrf": float(
-                train_cfg.scheduler.min_lr_ratio
-                if shared_protocol
-                else hparams.get("lrf", 0.01)
-            ),
-            "weight_decay": float(
-                train_cfg.optimizer.weight_decay
-                if shared_protocol
-                else hparams.get("weight_decay", 0.0005)
-            ),
-            "momentum": float(
-                train_cfg.optimizer.beta1
-                if shared_protocol
-                else hparams.get("momentum", 0.937)
-            ),
-            "warmup_epochs": float(0.0 if shared_protocol else hparams.get("warmup_epochs", 3.0)),
-            "cos_lr": bool(False if shared_protocol else hparams.get("cos_lr", False)),
-            "patience": 0 if shared_protocol else train_cfg.backend_params.get("patience", 100),
-            "nbs": int(
-                train_cfg.batch_size * train_cfg.gradient_accumulation_steps
-                if shared_protocol
-                else train_cfg.backend_params.get("nbs", 64)
-            ),
+            "optimizer": "AdamW",
+            "lr0": float(hparams.get("learning_rate", 0.01)),
+            "lrf": float(train_cfg.scheduler.min_lr_ratio),
+            "weight_decay": float(train_cfg.optimizer.weight_decay),
+            "momentum": float(train_cfg.optimizer.beta1),
+            "warmup_epochs": 0.0,
+            "cos_lr": False,
+            "patience": 0,
+            "nbs": int(train_cfg.batch_size * train_cfg.gradient_accumulation_steps),
         }
-        if train_cfg.max_steps is not None:
-            overrides["epochs"] = max(1, int(train_cfg.max_epochs or 1))
         overrides.update(train_cfg.backend_params.get("overrides", {}))
-        if train_cfg.protocol in {"controlled", "equal_hpo"}:
-            overrides.update(
-                {
-                    "epochs": int(train_cfg.scheduler.total_epochs),
-                    "optimizer": "AdamW",
-                    "lr0": float(hparams.get("learning_rate", 0.01)),
-                    "lrf": float(train_cfg.scheduler.min_lr_ratio),
-                    "weight_decay": float(train_cfg.optimizer.weight_decay),
-                    "momentum": float(train_cfg.optimizer.beta1),
-                    "warmup_epochs": 0.0,
-                    "cos_lr": False,
-                    "patience": 0,
-                    "nbs": int(train_cfg.batch_size * train_cfg.gradient_accumulation_steps),
-                }
-            )
-            overrides.update(_CONTROLLED_AUG_OFF)
+        overrides.update(
+            {
+                "epochs": int(train_cfg.scheduler.total_epochs),
+                "optimizer": "AdamW",
+                "lr0": float(hparams.get("learning_rate", 0.01)),
+                "lrf": float(train_cfg.scheduler.min_lr_ratio),
+                "weight_decay": float(train_cfg.optimizer.weight_decay),
+                "momentum": float(train_cfg.optimizer.beta1),
+                "warmup_epochs": 0.0,
+                "cos_lr": False,
+                "patience": 0,
+                "nbs": int(train_cfg.batch_size * train_cfg.gradient_accumulation_steps),
+            }
+        )
+        overrides.update(_CONTROLLED_AUG_OFF)
         return overrides
 
     def _validate_single_process_device(self, train_cfg: TrainConfig) -> None:
@@ -329,29 +294,11 @@ class UltralyticsDetectionAdapter(BaseModelAdapter):
             selected = checkpoint_state.last_checkpoint
         selected_is_best = checkpoint_state is not None and checkpoint_state.best_checkpoint is not None and selected == checkpoint_state.best_checkpoint
         checkpoint_path = selected or (last if last is not None and last.exists() else None)
-        if train_cfg.protocol in {"controlled", "equal_hpo"}:
-            optimizer_meta = {
-                **train_cfg.optimizer.model_dump(mode="json"),
-                "learning_rate": float(train_cfg.hparams.get("learning_rate", 0.01)),
-            }
-            scheduler_meta = train_cfg.scheduler.model_dump(mode="json")
-        else:
-            optimizer_meta = {
-                "name": train_cfg.hparams.get(
-                    "optimizer",
-                    train_cfg.backend_params.get("optimizer", "auto"),
-                ),
-                "learning_rate": float(
-                    train_cfg.hparams.get("lr0", train_cfg.hparams.get("learning_rate", 0.01))
-                ),
-                "weight_decay": float(train_cfg.hparams.get("weight_decay", 0.0005)),
-                "momentum": float(train_cfg.hparams.get("momentum", 0.937)),
-            }
-            scheduler_meta = {
-                "name": "cosine" if train_cfg.hparams.get("cos_lr", False) else "linear",
-                "warmup_epochs": float(train_cfg.hparams.get("warmup_epochs", 3.0)),
-                "min_lr_ratio": float(train_cfg.hparams.get("lrf", 0.01)),
-            }
+        optimizer_meta = {
+            **train_cfg.optimizer.model_dump(mode="json"),
+            "learning_rate": float(train_cfg.hparams.get("learning_rate", 0.01)),
+        }
+        scheduler_meta = train_cfg.scheduler.model_dump(mode="json")
         meta = {
             "protocol": train_cfg.protocol,
             "ultralytics_args": dict(vars(trainer.args)),
@@ -407,7 +354,6 @@ class UltralyticsDetectionAdapter(BaseModelAdapter):
                 gradient_accumulation_steps=1,
                 optimizer_cfg=None,
                 scheduler_cfg=None,
-                shared_protocol=True,
                 checkpoint_state=None,
                 trial_final_only=False,
                 adapter=None,
@@ -429,10 +375,8 @@ class UltralyticsDetectionAdapter(BaseModelAdapter):
                 self._hf_log_prefix = log_prefix
                 self._hf_logging_steps = logging_steps
                 self._protocol_stop_after_epochs = stop_after_epochs
-                self._protocol_gradient_accumulation_steps = gradient_accumulation_steps
                 self._protocol_optimizer_cfg = optimizer_cfg
                 self._protocol_scheduler_cfg = scheduler_cfg
-                self._protocol_shared = shared_protocol
                 self._protocol_checkpoint_state = checkpoint_state
                 self._protocol_trial_final_only = trial_final_only
                 self._protocol_adapter = adapter
@@ -449,18 +393,17 @@ class UltralyticsDetectionAdapter(BaseModelAdapter):
 
             def run_callbacks(self, event: str):
                 super().run_callbacks(event)
-                if event == "on_train_epoch_start" and self._protocol_shared:
+                if event == "on_train_epoch_start":
                     self._protocol_epoch_batches = 0
                     self.accumulate = self._protocol_nominal_accumulate
-                elif event == "on_train_batch_start" and self._protocol_shared:
+                elif event == "on_train_batch_start":
                     current_batch = self._protocol_epoch_batches + 1
                     if current_batch == len(self.train_loader):
                         remainder = len(self.train_loader) % self._protocol_nominal_accumulate
                         if remainder:
                             self.accumulate = remainder
                 elif event == "on_train_batch_end":
-                    if self._protocol_shared:
-                        self._protocol_epoch_batches += 1
+                    self._protocol_epoch_batches += 1
                     self._hf_seen_steps += 1
                     if self._hf_seen_steps % self._hf_logging_steps == 0:
                         self._log_step_metrics()
@@ -471,11 +414,10 @@ class UltralyticsDetectionAdapter(BaseModelAdapter):
                 elif event == "on_train_end":
                     self._log_step_metrics(force=True)
                 elif event == "on_train_epoch_end":
-                    if self._protocol_shared and self.epoch + 1 >= self._protocol_stop_after_epochs:
+                    if self.epoch + 1 >= self._protocol_stop_after_epochs:
                         self._protocol_stop_at_epoch_end = True
                 elif event == "on_fit_epoch_end":
-                    if self._protocol_shared:
-                        self._protocol_epoch_end()
+                    self._protocol_epoch_end()
 
             def _log_step_metrics(self, *, force: bool = False):
                 if self._hf_logger is None:
@@ -548,15 +490,6 @@ class UltralyticsDetectionAdapter(BaseModelAdapter):
                 return {}, fitness
 
             def build_optimizer(self, model, name="AdamW", lr=0.001, momentum=0.9, decay=1e-5, iterations=1e5):
-                if not self._protocol_shared:
-                    return super().build_optimizer(
-                        model,
-                        name=name,
-                        lr=lr,
-                        momentum=momentum,
-                        decay=decay,
-                        iterations=iterations,
-                    )
                 cfg = self._protocol_optimizer_cfg
                 groups = build_adamw_param_groups(model, weight_decay=cfg.weight_decay)
                 return torch.optim.AdamW(
@@ -567,8 +500,6 @@ class UltralyticsDetectionAdapter(BaseModelAdapter):
                 )
 
             def _setup_scheduler(self):
-                if not self._protocol_shared:
-                    return super()._setup_scheduler()
                 self._protocol_nominal_accumulate = int(self.accumulate)
                 steps_per_epoch = optimizer_steps_per_epoch(
                     len(self.train_loader),
@@ -593,7 +524,7 @@ class UltralyticsDetectionAdapter(BaseModelAdapter):
                 ):
                     return
                 self._protocol_optimizer_steps += 1
-                if self._protocol_shared and self._protocol_scheduler is not None:
+                if self._protocol_scheduler is not None:
                     self._protocol_scheduler.step()
 
             def _protocol_epoch_end(self):

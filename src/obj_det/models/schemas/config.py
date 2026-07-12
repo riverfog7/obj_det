@@ -10,7 +10,7 @@ from .base import ModelSchema
 
 LabelMode = Literal["native", "meta"]
 BackendName = Literal["hf_trainer", "ultralytics", "torchvision"]
-ProtocolName = Literal["controlled", "equal_hpo", "ecosystem"]
+ProtocolName = Literal["controlled", "equal_hpo"]
 
 
 def validate_class_list(value: list[str]) -> list[str]:
