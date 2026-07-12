@@ -1,0 +1,9 @@
+key: hazydet_real
+path: datasets/hazydet_real
+train_split: train
+val_split: val
+test_split: test
+default_class_space: traffic6
+meta:
+  controlled_plan_enabled: false
+  controlled_plan_blocker: missing_validation_split
