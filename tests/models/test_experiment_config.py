@@ -80,6 +80,7 @@ class ExperimentConfigTest(unittest.TestCase):
         self.assertEqual(tuning.pruner, "none")
         self.assertEqual(tuning.objective_metric, "map_50_95")
         self.assertEqual(tuning.save_strategy, "final_only")
+        self.assertTrue(tuning.detailed_eval)
 
         train_kwargs = {
             "run_key": "r",

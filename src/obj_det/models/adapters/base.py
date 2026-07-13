@@ -50,6 +50,7 @@ class BaseModelAdapter(ABC):
         *,
         logger: BaseExperimentLogger | None = None,
         log_prefix: str | None = None,
+        log_step: int | None = None,
     ) -> EvalResult:
         from obj_det.models.evaluation.evaluator import DetectionEvaluator
 
@@ -67,5 +68,5 @@ class BaseModelAdapter(ABC):
         evaluator = DetectionEvaluator()
         result = evaluator.evaluate(ds, predictions, eval_cfg, model_key=self.key)
         if logger is not None:
-            logger.log_eval_result(result, prefix=log_prefix)
+            logger.log_eval_result(result, step=log_step, prefix=log_prefix)
         return result

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from unittest.mock import Mock
 
 from datasets import Dataset
 
@@ -252,6 +253,33 @@ class EvaluatorTest(unittest.TestCase):
 
         self.assertIsNotNone(adapter.predict_cfg)
         self.assertEqual(adapter.predict_cfg.max_detections_per_image, 217)
+
+    def test_base_adapter_logs_evaluation_at_explicit_step(self):
+        ds = Dataset.from_list([row(objects=[])])
+        adapter = _PredictionConfigRecordingAdapter()
+        artifact = ModelArtifact(
+            model_key=adapter.key,
+            backend=adapter.backend,
+            run_key="recording",
+            classes=["car"],
+            label_mode="meta",
+        )
+        logger = Mock()
+
+        result = adapter.evaluate(
+            ds,
+            artifact,
+            EvalConfig(classes=["car"], preprocess=PreprocessConfig(image_size=32)),
+            logger=logger,
+            log_prefix="val/epoch",
+            log_step=17,
+        )
+
+        logger.log_eval_result.assert_called_once_with(
+            result,
+            step=17,
+            prefix="val/epoch",
+        )
 
     def test_evaluator_does_not_decode_images(self):
         ds = Dataset.from_list([row()])

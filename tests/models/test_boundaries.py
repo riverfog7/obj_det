@@ -31,6 +31,13 @@ class BoundaryTest(unittest.TestCase):
         self.assertIn("warnings.warn", text)
         self.assertNotIn("raise NotImplementedError(\"Ultralytics train-time eval_strategy", text)
 
+    def test_all_epoch_callbacks_log_validation_step_and_epoch_index(self):
+        for name in ["hf_trainer.py", "torchvision.py", "ultralytics.py"]:
+            with self.subTest(adapter=name):
+                text = (pathlib.Path("src/obj_det/models/adapters") / name).read_text()
+                self.assertIn("log_step=", text)
+                self.assertIn('"val/epoch_index": epoch', text)
+
     def test_predict_paths_do_not_eagerly_list_dataset(self):
         offenders = []
         for path in pathlib.Path("src/obj_det/models/adapters").glob("*.py"):

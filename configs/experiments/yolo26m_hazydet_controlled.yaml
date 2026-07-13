@@ -92,7 +92,7 @@ tuning:
   save_strategy: final_only
   early_stopping: false
   catch_trial_errors: false
-  detailed_eval: false
+  detailed_eval: true
   output_dir: runs/hpo/yolo26m_hazydet_controlled
 
 logging:

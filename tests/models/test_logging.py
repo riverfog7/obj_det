@@ -8,6 +8,7 @@ from tempfile import TemporaryDirectory
 from obj_det.models.logging import (
     CompositeLogger,
     LocalJsonLogger,
+    WandbLogger,
     flatten_eval_result,
     flatten_prefixed_scalar_mapping,
     flatten_scalar_mapping,
@@ -98,6 +99,24 @@ class LoggingTest(unittest.TestCase):
 
         self.assertEqual(first.events, second.events)
         self.assertEqual(first.events[1], ("metrics", {"x": 1}, 2))
+
+    def test_wandb_epoch_eval_defers_commit_for_same_step_state(self):
+        calls = []
+        wandb = type("FakeWandb", (), {"log": lambda self, data, **kwargs: calls.append((data, kwargs))})()
+        logger = WandbLogger(project="test")
+        logger._wandb = lambda: wandb
+        result = EvalResult(
+            model_key="m",
+            primary_metric="map_50_95",
+            primary_metric_value=0.5,
+            metrics={"map_50_95": 0.5},
+        )
+
+        logger.log_eval_result(result, step=17, prefix="val/epoch")
+        logger.log_metrics({"val/epoch_index": 2}, step=17)
+
+        self.assertEqual(calls[0][1], {"step": 17, "commit": False})
+        self.assertEqual(calls[1][1], {"step": 17})
 
 
 if __name__ == "__main__":

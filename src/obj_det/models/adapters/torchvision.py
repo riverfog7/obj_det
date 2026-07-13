@@ -153,6 +153,7 @@ class TorchvisionDetectionAdapter(BaseModelAdapter):
                     epoch_eval_cfg,
                     logger=logger,
                     log_prefix="val/epoch",
+                    log_step=protocol_trainer.state.global_step,
                 )
                 metric = require_metric(
                     result.metrics,
@@ -170,6 +171,7 @@ class TorchvisionDetectionAdapter(BaseModelAdapter):
                 if metric is not None:
                     logger.log_metrics(
                         {
+                            "val/epoch_index": epoch,
                             "early_stopping/bad_epochs": checkpoint_state.early_stopping.bad_epochs,
                             "early_stopping/best_metric": checkpoint_state.early_stopping.best_metric,
                             "early_stopping/best_epoch": checkpoint_state.early_stopping.best_epoch,

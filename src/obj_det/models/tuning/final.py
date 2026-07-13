@@ -49,15 +49,6 @@ def run_final_seeds(
 
     runs: list[FinalSeedRun] = []
     final_hparams = {**base_train_cfg.hparams, **hparams}
-    epoch_eval_cfg = eval_cfg.model_copy(
-        update={
-            "compute_per_class": False,
-            "compute_per_condition": False,
-            "compute_per_domain": False,
-            "compute_per_size": False,
-        },
-        deep=True,
-    )
     for seed in seeds:
         run_output_dir = (output_dir or base_train_cfg.output_dir) / f"final_seed{seed}"
         train_cfg = base_train_cfg.model_copy(
@@ -94,7 +85,7 @@ def run_final_seeds(
                 train_ds,
                 val_ds,
                 train_cfg,
-                epoch_eval_cfg=epoch_eval_cfg,
+                epoch_eval_cfg=eval_cfg,
                 logger=logger,
                 log_prefix="train",
             )

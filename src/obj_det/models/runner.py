@@ -38,7 +38,7 @@ class ExperimentRunner:
                 train_ds=self._split(dataset, self.exp.dataset.train_split),
                 val_ds=self._split(dataset, self.exp.dataset.val_split),
                 train_cfg=self.exp.train,
-                epoch_eval_cfg=self._epoch_eval_cfg() if self.exp.train.eval_strategy.enabled else None,
+                epoch_eval_cfg=self.exp.eval if self.exp.train.eval_strategy.enabled else None,
                 logger=logger,
                 log_prefix="train",
             )
@@ -163,18 +163,6 @@ class ExperimentRunner:
         if split not in dataset:
             raise KeyError(f"Missing split {split!r}. Available splits: {list(dataset.keys())}")
         return dataset[split]
-
-    def _epoch_eval_cfg(self):
-        return self.exp.eval.model_copy(
-            update={
-                "compute_per_class": False,
-                "compute_per_condition": False,
-                "compute_per_domain": False,
-                "compute_per_size": False,
-            },
-            deep=True,
-        )
-
 
 def write_final_results(runs: list[FinalSeedRun], path: Path) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)

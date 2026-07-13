@@ -16,7 +16,11 @@ from obj_det.models.schemas.artifact import ModelArtifact
 
 
 class DummyAdapter:
+    def __init__(self):
+        self.epoch_eval_cfg = None
+
     def train(self, train_ds, val_ds, train_cfg, *, epoch_eval_cfg=None, logger=None, log_prefix="train"):
+        self.epoch_eval_cfg = epoch_eval_cfg
         if logger is not None:
             logger.log_metrics({f"{log_prefix}/loss": 1.25}, step=1)
         return ModelArtifact(
@@ -178,7 +182,14 @@ class CliTest(unittest.TestCase):
                         "train:",
                         "  run_key: r",
                         f"  output_dir: {root / 'run'}",
-                        "eval: {}",
+                        "  eval_strategy:",
+                        "    enabled: true",
+                        "    every_epochs: 1",
+                        "eval:",
+                        "  compute_per_class: true",
+                        "  compute_per_condition: true",
+                        "  compute_per_domain: true",
+                        "  compute_per_size: true",
                         "logging:",
                         "  backends: [local]",
                         "  local:",
@@ -188,10 +199,11 @@ class CliTest(unittest.TestCase):
                 encoding="utf-8",
             )
             dataset = {"train": [object()], "validation": [object()]}
+            adapter = DummyAdapter()
 
             with (
                 patch("obj_det.models.runner.load_from_disk", return_value=dataset),
-                patch("obj_det.models.runner.model_adapter_from_config", return_value=DummyAdapter()),
+                patch("obj_det.models.runner.model_adapter_from_config", return_value=adapter),
             ):
                 result = CliRunner().invoke(app, ["train", str(config)])
 
@@ -201,6 +213,11 @@ class CliTest(unittest.TestCase):
         self.assertEqual(rows[0]["event"], "start_run")
         self.assertTrue(any(row.get("metrics") == {"train/loss": 1.25} for row in rows))
         self.assertEqual(rows[-1]["event"], "finish_run")
+        self.assertTrue(adapter.epoch_eval_cfg.compute_per_class)
+        self.assertTrue(adapter.epoch_eval_cfg.compute_per_condition)
+        self.assertTrue(adapter.epoch_eval_cfg.compute_per_domain)
+        self.assertTrue(adapter.epoch_eval_cfg.compute_per_size)
+
 
 class PlanCliTest(unittest.TestCase):
     def test_models_cli_exposes_plan_commands(self):

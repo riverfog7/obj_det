@@ -138,6 +138,7 @@ class HFTrainerDetectionAdapter(BaseModelAdapter):
                     epoch_eval_cfg,
                     logger=logger,
                     log_prefix="val/epoch",
+                    log_step=self.state.global_step,
                 )
                 metric = require_metric(
                     result.metrics,
@@ -154,6 +155,7 @@ class HFTrainerDetectionAdapter(BaseModelAdapter):
                     logger.log_artifact(checkpoint_path, name=f"checkpoint_epoch_{epoch:03d}")
                     logger.log_metrics(
                         {
+                            "val/epoch_index": epoch,
                             "early_stopping/bad_epochs": checkpoint_state.early_stopping.bad_epochs,
                             "early_stopping/best_metric": checkpoint_state.early_stopping.best_metric,
                             "early_stopping/best_epoch": checkpoint_state.early_stopping.best_epoch,

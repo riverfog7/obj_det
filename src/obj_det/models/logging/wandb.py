@@ -83,7 +83,11 @@ class WandbLogger(BaseExperimentLogger):
             self._wandb().log(scalars, step=step)
 
     def log_eval_result(self, result: EvalResult, step: int | None = None, prefix: str | None = None) -> None:
-        self.log_metrics(flatten_eval_result(result, prefix=prefix), step=step)
+        metrics = flatten_eval_result(result, prefix=prefix)
+        if step is None:
+            self.log_metrics(metrics)
+            return
+        self._wandb().log(metrics, step=step, commit=False)
 
     def log_artifact(self, path, name: str | None = None) -> None:
         if self.run is not None:

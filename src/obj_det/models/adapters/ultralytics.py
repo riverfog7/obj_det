@@ -565,6 +565,7 @@ class UltralyticsDetectionAdapter(BaseModelAdapter):
                         self._protocol_epoch_eval_cfg,
                         logger=self._hf_logger,
                         log_prefix="val/epoch",
+                        log_step=self._protocol_optimizer_steps,
                     )
                     metric = require_metric(
                         result.metrics,
@@ -584,6 +585,7 @@ class UltralyticsDetectionAdapter(BaseModelAdapter):
                     if metric is not None:
                         self._hf_logger.log_metrics(
                             {
+                                "val/epoch_index": epoch,
                                 "early_stopping/bad_epochs": self._protocol_checkpoint_state.early_stopping.bad_epochs,
                                 "early_stopping/best_metric": self._protocol_checkpoint_state.early_stopping.best_metric,
                                 "early_stopping/best_epoch": self._protocol_checkpoint_state.early_stopping.best_epoch,

@@ -459,7 +459,7 @@ class TuningTest(unittest.TestCase):
         self.assertIsNone(runner._boundary_warning({"learning_rate": (3.0e-6 * 3.0e-3) ** 0.5}, search_space))
         self.assertIn("upper log-space boundary", runner._boundary_warning({"learning_rate": 3.0e-3}, search_space))
 
-    def test_hpo_uses_lightweight_eval_by_default(self):
+    def test_hpo_uses_detailed_eval_by_default(self):
         class EvalConfigRecordingAdapter(DummyAdapter):
             def __init__(self):
                 super().__init__()
@@ -495,12 +495,12 @@ class TuningTest(unittest.TestCase):
 
         self.assertEqual(len(adapter.eval_configs), 1)
         used_cfg = adapter.eval_configs[0]
-        self.assertFalse(used_cfg.compute_per_class)
-        self.assertFalse(used_cfg.compute_per_condition)
-        self.assertFalse(used_cfg.compute_per_domain)
-        self.assertFalse(used_cfg.compute_per_size)
+        self.assertTrue(used_cfg.compute_per_class)
+        self.assertTrue(used_cfg.compute_per_condition)
+        self.assertTrue(used_cfg.compute_per_domain)
+        self.assertTrue(used_cfg.compute_per_size)
 
-    def test_hpo_can_opt_into_detailed_eval(self):
+    def test_hpo_can_opt_out_of_detailed_eval(self):
         class EvalConfigRecordingAdapter(DummyAdapter):
             def __init__(self):
                 super().__init__()
@@ -524,10 +524,10 @@ class TuningTest(unittest.TestCase):
                 base_train_cfg=TrainConfig(run_key="r", classes=["car"], output_dir=Path(tmp) / "base", preprocess=preprocess),
                 eval_cfg=EvalConfig(classes=["car"], preprocess=preprocess, compute_per_class=True),
                 search_space=learning_rate_search_space(),
-                tuning_cfg=TuningConfig(study_name="s", n_trials=1, output_dir=Path(tmp), detailed_eval=True),
+                tuning_cfg=TuningConfig(study_name="s", n_trials=1, output_dir=Path(tmp), detailed_eval=False),
             )
 
-        self.assertTrue(adapter.eval_configs[0].compute_per_class)
+        self.assertFalse(adapter.eval_configs[0].compute_per_class)
 
     def test_hpo_logs_trial_train_eval_and_objective(self):
         sys.modules["optuna"] = FakeOptuna([
@@ -626,7 +626,14 @@ class TuningTest(unittest.TestCase):
                 val_ds=ds,
                 test_ds=ds,
                 base_train_cfg=TrainConfig(run_key="final", classes=["car"], output_dir=Path(tmp), preprocess=preprocess),
-                eval_cfg=EvalConfig(classes=["car"], preprocess=preprocess),
+                eval_cfg=EvalConfig(
+                    classes=["car"],
+                    preprocess=preprocess,
+                    compute_per_class=True,
+                    compute_per_condition=True,
+                    compute_per_domain=True,
+                    compute_per_size=True,
+                ),
                 hparams={"learning_rate": 3.0e-4},
                 seeds=[0, 1, 2],
             )
@@ -634,6 +641,12 @@ class TuningTest(unittest.TestCase):
         self.assertEqual([run.seed for run in runs], [0, 1, 2])
         self.assertEqual([item[0] for item in adapter.trained], [0, 1, 2])
         self.assertEqual(len(adapter.evaluated), 6)
+        self.assertEqual(len(adapter.epoch_eval_configs), 3)
+        for epoch_eval_cfg in adapter.epoch_eval_configs:
+            self.assertTrue(epoch_eval_cfg.compute_per_class)
+            self.assertTrue(epoch_eval_cfg.compute_per_condition)
+            self.assertTrue(epoch_eval_cfg.compute_per_domain)
+            self.assertTrue(epoch_eval_cfg.compute_per_size)
 
     def test_final_seeds_merge_base_and_best_hparams(self):
         ds = Dataset.from_list([row()])

@@ -28,7 +28,7 @@ class TuningConfig(ModelSchema):
     storage: str | None = None
     output_dir: Path
     catch_trial_errors: bool = False
-    detailed_eval: bool = False
+    detailed_eval: bool = True
     meta: dict[str, Any] = Field(default_factory=dict)
 
 
