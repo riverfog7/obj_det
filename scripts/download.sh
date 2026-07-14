@@ -3,7 +3,7 @@
 set -euo pipefail
 
 DATASET_SAVE_PATH="${SOURCE_DATASET_ROOT:-source_datasets}"
-AVAILABLE_DATASETS=(hazydet visdrone xwod dawn exdark voc2007 cityscapes bdd100k acdc)
+AVAILABLE_DATASETS=(hazydet visdrone xwod dawn exdark voc2007 cityscapes bdd100k acdc carpk)
 FORCE=false
 
 usage() {
@@ -11,7 +11,7 @@ usage() {
 Usage: scripts/download.sh [--force] <dataset> [<dataset> ...]
        scripts/download.sh [--force] all
 
-Datasets: hazydet, visdrone, xwod, dawn, exdark, voc2007, cityscapes, bdd100k, acdc
+Datasets: hazydet, visdrone, xwod, dawn, exdark, voc2007, cityscapes, bdd100k, acdc, carpk
 
 Existing dataset directories are preserved unless --force is supplied.
 EOF
@@ -198,6 +198,17 @@ download_acdc() {
         6436f2259880d97633275dfc \
         rgb_anon_trainvaltest.zip \
         3350587a08502b4dfee47750bfd2a052
+}
+
+download_carpk() {
+    local path
+    path="$(dataset_path carpk)"
+
+    echo "Downloading CARPK COCO export from Roboflow..."
+    uv tool run roboflow download \
+        -f coco \
+        -l "$path" \
+        elpida-eleftheriadi/carpk-xk8e1/1
 }
 
 is_available_dataset() {

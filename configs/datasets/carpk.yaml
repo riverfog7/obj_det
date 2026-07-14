@@ -1,0 +1,33 @@
+key: carpk
+root: source_datasets/carpk
+source_format: coco
+
+default_condition: clear
+default_domain: aerial
+default_is_synthetic: false
+bbox_policy: clip
+
+splits:
+  train:
+    paths:
+      images: train
+      annotations: train/_annotations.coco.json
+  val:
+    paths:
+      images: valid
+      annotations: valid/_annotations.coco.json
+  test:
+    paths:
+      images: test
+      annotations: test/_annotations.coco.json
+
+class_map:
+  "0": car
+  car: car
+
+ignore_labels: []
+
+meta:
+  homepage: https://universe.roboflow.com/elpida-eleftheriadi/carpk-xk8e1
+  license: CC BY 4.0
+  export_version: 1
