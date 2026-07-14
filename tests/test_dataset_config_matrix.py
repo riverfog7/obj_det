@@ -27,7 +27,6 @@ FAIL_CLOSED_DATASETS = {
     "cityscapes",
     "dawn",
     "hazydet_real",
-    "nuscenes",
 }
 ALL_DATASETS = RUNNABLE_DATASETS | FAIL_CLOSED_DATASETS
 

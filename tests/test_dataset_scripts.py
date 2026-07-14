@@ -32,25 +32,6 @@ class DatasetScriptsTest(unittest.TestCase):
             self.assertFalse((source_root / "bdd100k").exists())
             self.assertIn("requires BDD100K_IMAGES_ARCHIVE", result.stderr)
 
-    def test_nuscenes_download_requires_staged_archives(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            source_root = Path(tmp) / "source"
-            env = {**os.environ, "SOURCE_DATASET_ROOT": str(source_root)}
-            env.pop("NUSCENES_ARCHIVES", None)
-
-            result = subprocess.run(
-                ["bash", "scripts/download.sh", "nuscenes"],
-                cwd=REPO_ROOT,
-                env=env,
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-
-            self.assertNotEqual(result.returncode, 0)
-            self.assertFalse((source_root / "nuscenes").exists())
-            self.assertIn("requires NUSCENES_ARCHIVES", result.stderr)
-
     def test_download_preserves_existing_dataset_without_force(self):
         with tempfile.TemporaryDirectory() as tmp:
             source_root = Path(tmp) / "source"

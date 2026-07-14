@@ -25,10 +25,6 @@ class _CocoImage(_CocoModel):
     file_name: str
     width: int | None = None
     height: int | None = None
-    condition: str | None = None
-    domain: str | None = None
-    is_synthetic: bool | None = None
-    meta: dict[str, Any] = Field(default_factory=dict)
 
 
 class _CocoAnnotation(_CocoModel):
@@ -39,7 +35,6 @@ class _CocoAnnotation(_CocoModel):
     area: float | None = None
     iscrowd: bool = False
     ignore: bool = False
-    meta: dict[str, Any] = Field(default_factory=dict)
 
 
 class _CocoCategory(_CocoModel):
@@ -154,7 +149,6 @@ class CocoSourceDataset(BaseSourceDataset):
                     ignore=annotation.ignore,
                     iscrowd=annotation.iscrowd,
                     meta={
-                        **annotation.meta,
                         "source_annotation_id": annotation.id,
                         "source_area": annotation.area,
                     },
@@ -174,7 +168,7 @@ class CocoSourceDataset(BaseSourceDataset):
 
                 objects.append(obj)
 
-            condition = image_info.condition
+            condition = None
             if condition_part is not None:
                 try:
                     condition = raw_image_path.parts[int(condition_part)]
@@ -192,10 +186,7 @@ class CocoSourceDataset(BaseSourceDataset):
                 height=height,
                 objects=objects,
                 condition=condition,
-                domain=image_info.domain,
-                is_synthetic=image_info.is_synthetic,
                 meta={
-                    **image_info.meta,
                     "source_image_id": source_image_id,
                     "source_file_name": source_file_name,
                     "source_annotation_format": "coco",
