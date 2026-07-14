@@ -1,0 +1,82 @@
+key: voc2007_controlled
+
+dataset_file: ../dataset_refs/voc2007.yaml
+class_space_file: ../class_spaces/traffic6.yaml
+recipe_file: ../recipes/controlled_640.yaml
+model_group_file: ../model_groups/detection_main.yaml
+
+run_template:
+  run_key: "{model_key}_{dataset_key}_{protocol}"
+  output_dir: "runs/{model_key}/{dataset_key}/{protocol}"
+  tuning_study_name: "{model_key}_{dataset_key}_{protocol}"
+  tuning_output_dir: "runs/hpo/{model_key}_{dataset_key}_{protocol}"
+  final_output_dir: "runs/{model_key}/{dataset_key}/{protocol}/final"
+  wandb_project: "{dataset_key}_{protocol}"
+
+backend_defaults:
+  ultralytics:
+    train:
+      batch_size: 8
+      loader:
+        num_workers: 16
+        pin_memory: true
+        persistent_workers: true
+        prefetch_factor: 4
+        decode_backend: opencv
+    eval:
+      batch_size: 8
+    predict:
+      batch_size: 8
+
+  hf_trainer:
+    train:
+      batch_size: 8
+      loader:
+        num_workers: 8
+        pin_memory: true
+        persistent_workers: true
+        prefetch_factor: 4
+        decode_backend: opencv
+    eval:
+      batch_size: 8
+    predict:
+      batch_size: 8
+
+  torchvision:
+    train:
+      batch_size: 8
+      loader:
+        num_workers: 8
+        pin_memory: true
+        persistent_workers: true
+        prefetch_factor: 4
+        decode_backend: opencv
+    eval:
+      batch_size: 8
+    predict:
+      batch_size: 8
+
+model_overrides:
+  rfdetr_base:
+    train:
+      batch_size: 4
+    eval:
+      batch_size: 4
+    predict:
+      batch_size: 4
+
+  yolo26m:
+    train:
+      batch_size: 16
+
+  yolo11m:
+    train:
+      batch_size: 16
+
+  yolov8m:
+    train:
+      batch_size: 16
+
+tags:
+  - voc2007
+  - controlled

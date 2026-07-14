@@ -1,0 +1,53 @@
+key: voc2007
+root: source_datasets/voc2007
+source_format: pascal_voc
+
+default_condition: unknown
+default_domain: general
+default_is_synthetic: false
+bbox_policy: clip
+
+splits:
+  train:
+    paths:
+      images: VOCdevkit/VOC2007/JPEGImages
+      annotations: VOCdevkit/VOC2007/Annotations
+      image_set: VOCdevkit/VOC2007/ImageSets/Main/train.txt
+  val:
+    paths:
+      images: VOCdevkit/VOC2007/JPEGImages
+      annotations: VOCdevkit/VOC2007/Annotations
+      image_set: VOCdevkit/VOC2007/ImageSets/Main/val.txt
+  test:
+    paths:
+      images: VOCdevkit/VOC2007/JPEGImages
+      annotations: VOCdevkit/VOC2007/Annotations
+      image_set: VOCdevkit/VOC2007/ImageSets/Main/test.txt
+
+class_map:
+  aeroplane:
+  bicycle: bicycle
+  bird:
+  boat:
+  bottle:
+  bus: bus
+  car: car
+  cat:
+  chair:
+  cow:
+  diningtable:
+  dog:
+  horse:
+  motorbike: motorcycle
+  person: person
+  pottedplant:
+  sheep:
+  sofa:
+  train:
+  tvmonitor:
+
+ignore_labels: []
+
+meta:
+  homepage: http://host.robots.ox.ac.uk/pascal/VOC/voc2007/
+  license: dataset-specific terms

@@ -3,7 +3,7 @@
 set -euo pipefail
 
 DATASET_SAVE_PATH="${SOURCE_DATASET_ROOT:-source_datasets}"
-AVAILABLE_DATASETS=(hazydet visdrone xwod dawn exdark)
+AVAILABLE_DATASETS=(hazydet visdrone xwod dawn exdark voc2007)
 FORCE=false
 
 usage() {
@@ -11,7 +11,7 @@ usage() {
 Usage: scripts/download.sh [--force] <dataset> [<dataset> ...]
        scripts/download.sh [--force] all
 
-Datasets: hazydet, visdrone, xwod, dawn, exdark
+Datasets: hazydet, visdrone, xwod, dawn, exdark, voc2007
 
 Existing dataset directories are preserved unless --force is supplied.
 EOF
@@ -110,6 +110,20 @@ download_exdark() {
     unzip -q "$path/$annotations_zip" -d "$path"
     rm "$path/$images_zip" "$path/$annotations_zip"
     rm -rf "$path/__MACOSX"
+}
+
+download_voc2007() {
+    local path
+    path="$(dataset_path voc2007)"
+    local base_url="https://www.robots.ox.ac.uk/~vgg/projects/pascal/VOC/voc2007"
+    local archives=(VOCtrainval_06-Nov-2007.tar VOCtest_06-Nov-2007.tar)
+
+    echo "Downloading Pascal VOC 2007..."
+    for archive in "${archives[@]}"; do
+        curl -LfsS "$base_url/$archive" -o "$path/$archive"
+        tar -xf "$path/$archive" -C "$path"
+        rm "$path/$archive"
+    done
 }
 
 is_available_dataset() {

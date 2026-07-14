@@ -1,0 +1,6 @@
+key: voc2007
+path: datasets/voc2007
+train_split: train
+val_split: val
+test_split: test
+default_class_space: traffic6

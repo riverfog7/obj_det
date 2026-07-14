@@ -3,6 +3,7 @@ from .coco import CocoSourceDataset
 from .exdark import ExDarkSourceDataset
 from .factory import SOURCE_FORMATS, source_from_config
 from .visdrone import VisDroneDetSourceDataset
+from .voc import PascalVocSourceDataset
 from .yolo import YoloSourceDataset
 from .yolo_noyml import YoloNoYamlSourceDataset
 
@@ -10,6 +11,7 @@ __all__ = [
     "BaseSourceDataset",
     "CocoSourceDataset",
     "ExDarkSourceDataset",
+    "PascalVocSourceDataset",
     "VisDroneDetSourceDataset",
     "YoloSourceDataset",
     "YoloNoYamlSourceDataset",

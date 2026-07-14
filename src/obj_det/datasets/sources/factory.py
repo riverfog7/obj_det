@@ -6,6 +6,7 @@ from .base import BaseSourceDataset
 from .coco import CocoSourceDataset
 from .exdark import ExDarkSourceDataset
 from .visdrone import VisDroneDetSourceDataset
+from .voc import PascalVocSourceDataset
 from .yolo import YoloSourceDataset
 from .yolo_noyml import YoloNoYamlSourceDataset
 
@@ -13,6 +14,7 @@ from .yolo_noyml import YoloNoYamlSourceDataset
 SOURCE_FORMATS: dict[str, type[BaseSourceDataset]] = {
     "coco": CocoSourceDataset,
     "exdark": ExDarkSourceDataset,
+    "pascal_voc": PascalVocSourceDataset,
     "visdrone_det": VisDroneDetSourceDataset,
     "yolo": YoloSourceDataset,
     "yolo_noyml": YoloNoYamlSourceDataset,
