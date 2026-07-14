@@ -1,0 +1,39 @@
+key: acdc
+root: source_datasets/acdc
+source_format: coco
+
+default_condition: adverse
+default_domain: road
+default_is_synthetic: false
+bbox_policy: clip
+
+splits:
+  train:
+    paths:
+      images: rgb_anon
+      annotations: gt_detection/instancesonly_train_gt_detection.json
+    meta:
+      condition_from_file_name_part: 0
+  val:
+    paths:
+      images: rgb_anon
+      annotations: gt_detection/instancesonly_val_gt_detection.json
+    meta:
+      condition_from_file_name_part: 0
+
+class_map:
+  person: person
+  rider: person
+  car: car
+  truck: truck
+  bus: bus
+  train:
+  motorcycle: motorcycle
+  bicycle: bicycle
+
+ignore_labels: []
+
+meta:
+  homepage: https://acdc.vision.ee.ethz.ch/
+  license: dataset-specific terms
+  public_test_annotations: false

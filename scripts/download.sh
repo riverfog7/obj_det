@@ -3,7 +3,7 @@
 set -euo pipefail
 
 DATASET_SAVE_PATH="${SOURCE_DATASET_ROOT:-source_datasets}"
-AVAILABLE_DATASETS=(hazydet visdrone xwod dawn exdark voc2007 cityscapes bdd100k)
+AVAILABLE_DATASETS=(hazydet visdrone xwod dawn exdark voc2007 cityscapes bdd100k acdc)
 FORCE=false
 
 usage() {
@@ -11,7 +11,7 @@ usage() {
 Usage: scripts/download.sh [--force] <dataset> [<dataset> ...]
        scripts/download.sh [--force] all
 
-Datasets: hazydet, visdrone, xwod, dawn, exdark, voc2007, cityscapes, bdd100k
+Datasets: hazydet, visdrone, xwod, dawn, exdark, voc2007, cityscapes, bdd100k, acdc
 
 Existing dataset directories are preserved unless --force is supplied.
 EOF
@@ -162,6 +162,42 @@ download_bdd100k() {
         mv "$path"/bdd100k/* "$path"
         rmdir "$path/bdd100k"
     fi
+}
+
+download_acdc_package() {
+    local path="$1"
+    local package_id="$2"
+    local archive_name="$3"
+    local expected_md5="$4"
+    local token
+    token="$(
+        curl -LfsS "https://acdc.vision.ee.ethz.ch/api/getPackageUri/$package_id" \
+            | python3 -c 'import json, sys; print(json.load(sys.stdin)["token"])'
+    )"
+
+    curl -LfsS \
+        "https://acdc.vision.ee.ethz.ch/api/downloadPackage/$token/$archive_name" \
+        -o "$path/$archive_name"
+    printf '%s  %s\n' "$expected_md5" "$path/$archive_name" | md5sum -c -
+    unzip -q "$path/$archive_name" -d "$path"
+    rm "$path/$archive_name"
+}
+
+download_acdc() {
+    local path
+    path="$(dataset_path acdc)"
+
+    echo "Downloading ACDC detection annotations and images..."
+    download_acdc_package \
+        "$path" \
+        6436eab79880d97633275d1b \
+        gt_detection_trainval.zip \
+        32598aacfe0f3c5138262849be8f35f3
+    download_acdc_package \
+        "$path" \
+        6436f2259880d97633275dfc \
+        rgb_anon_trainvaltest.zip \
+        3350587a08502b4dfee47750bfd2a052
 }
 
 is_available_dataset() {

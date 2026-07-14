@@ -87,6 +87,7 @@ class CocoSourceDataset(BaseSourceDataset):
 
         categories_by_id = coco.categories_by_id()
         annotations_by_image_id = coco.annotations_by_image_id()
+        condition_part = self.split_cfg(split).meta.get("condition_from_file_name_part")
 
         for image_info in coco.images:
             source_image_id = image_info.id
@@ -167,6 +168,16 @@ class CocoSourceDataset(BaseSourceDataset):
 
                 objects.append(obj)
 
+            condition = None
+            if condition_part is not None:
+                try:
+                    condition = raw_image_path.parts[int(condition_part)]
+                except (IndexError, TypeError, ValueError) as exc:
+                    raise ValueError(
+                        f"Cannot derive condition from COCO file_name={source_file_name!r} "
+                        f"using path part {condition_part!r}"
+                    ) from exc
+
             yield self.make_record(
                 split=split,
                 source_id=source_image_id,
@@ -174,10 +185,10 @@ class CocoSourceDataset(BaseSourceDataset):
                 width=width,
                 height=height,
                 objects=objects,
+                condition=condition,
                 meta={
                     "source_image_id": source_image_id,
                     "source_file_name": source_file_name,
                     "source_annotation_format": "coco",
                 },
             )
-
