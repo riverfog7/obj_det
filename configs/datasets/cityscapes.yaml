@@ -1,0 +1,61 @@
+key: cityscapes
+root: source_datasets/cityscapes
+source_format: cityscapes
+
+default_condition: clear
+default_domain: road
+default_is_synthetic: false
+bbox_policy: clip
+
+splits:
+  train:
+    paths:
+      images: leftImg8bit/train
+      annotations: gtFine/train
+  val:
+    paths:
+      images: leftImg8bit/val
+      annotations: gtFine/val
+
+class_map:
+  person: person
+  rider: person
+  car: car
+  truck: truck
+  bus: bus
+  caravan: car
+  trailer: truck
+  train:
+  motorcycle: motorcycle
+  bicycle: bicycle
+
+ignore_labels:
+  - unlabeled
+  - ego vehicle
+  - rectification border
+  - out of roi
+  - static
+  - dynamic
+  - ground
+  - road
+  - sidewalk
+  - parking
+  - rail track
+  - building
+  - wall
+  - fence
+  - guard rail
+  - bridge
+  - tunnel
+  - pole
+  - traffic light
+  - traffic sign
+  - vegetation
+  - terrain
+  - sky
+  - license plate
+
+meta:
+  homepage: https://www.cityscapes-dataset.com/
+  license: dataset-specific terms
+  public_test_annotations: false

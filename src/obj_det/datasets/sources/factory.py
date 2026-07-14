@@ -3,6 +3,7 @@ from __future__ import annotations
 from obj_det.datasets.models.source_config import SourceDatasetConfig
 
 from .base import BaseSourceDataset
+from .cityscapes import CityscapesSourceDataset
 from .coco import CocoSourceDataset
 from .exdark import ExDarkSourceDataset
 from .visdrone import VisDroneDetSourceDataset
@@ -12,6 +13,7 @@ from .yolo_noyml import YoloNoYamlSourceDataset
 
 
 SOURCE_FORMATS: dict[str, type[BaseSourceDataset]] = {
+    "cityscapes": CityscapesSourceDataset,
     "coco": CocoSourceDataset,
     "exdark": ExDarkSourceDataset,
     "pascal_voc": PascalVocSourceDataset,
