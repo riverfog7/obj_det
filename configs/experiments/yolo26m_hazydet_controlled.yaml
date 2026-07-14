@@ -91,7 +91,7 @@ tuning:
   objective_metric: map_50_95
   save_strategy: final_only
   early_stopping: false
-  catch_trial_errors: false
+  catch_trial_errors: true
   detailed_eval: true
   output_dir: runs/hpo/yolo26m_hazydet_controlled
 

@@ -187,6 +187,7 @@ class ExperimentPlanTest(unittest.TestCase):
         self.assertEqual(set(cfg.search_space.params), {"learning_rate"})
         self.assertEqual(cfg.train.optimizer.name, "adamw")
         self.assertEqual(cfg.train.scheduler.total_epochs, 50)
+        self.assertTrue(cfg.tuning.catch_trial_errors)
 
     def test_repo_controlled_plan_applies_one_protocol_to_every_backend(self):
         exps = load_and_expand_experiment_plan(Path("configs/plans/hazydet_controlled.yaml"))
@@ -209,6 +210,7 @@ class ExperimentPlanTest(unittest.TestCase):
                 self.assertEqual(exp.tuning.sampler_params, {"n_startup_trials": 3})
                 self.assertEqual(exp.tuning.pruner, "none")
                 self.assertEqual(exp.tuning.save_strategy, "final_only")
+                self.assertTrue(exp.tuning.catch_trial_errors)
                 self.assertTrue(exp.tuning.detailed_eval)
                 self.assertEqual(set(exp.search_space.params), {"learning_rate"})
                 self.assertTrue(exp.train.eval_strategy.enabled)
