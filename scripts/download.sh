@@ -1,93 +1,175 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
-DATASET_SAVE_PATH="source_datasets"
+set -euo pipefail
 
-HAZYDET_SAVE_PATH="$DATASET_SAVE_PATH/hazydet"
-HAZYDET_DATASET_ID="xdedeerha/HazyDet"
-HAZYDET_TRAIN_ZIP="train.zip"
-HAZYDET_TEST_ZIP="test.zip"
-HAZYDET_VAL_ZIP="val.zip"
-HAZYDET_REAL_WORLD_ZIP="real_world.zip"
+DATASET_SAVE_PATH="${SOURCE_DATASET_ROOT:-source_datasets}"
+AVAILABLE_DATASETS=(hazydet visdrone xwod dawn exdark)
+FORCE=false
 
-VISDRONE_SAVE_PATH="$DATASET_SAVE_PATH/visdrone"
-VISDRONE_TRAIN_URL="https://drive.google.com/file/d/1a2oHjcEcwXP8oUF95qiwrqzACb2YlUhn/view?usp=sharing"
-VISDRONE_TEST_URL="https://drive.google.com/open?id=1PFdW_VFSCfZ_sTSZAGjQdifF_Xd5mf0V"
-VISDRONE_VAL_URL="https://drive.google.com/file/d/1bxK5zgLn0_L8x276eKkuYA_FzwCIjb59/view?usp=sharing"
-VISDRONE_TRAIN_ZIP="VisDrone2019-DET-train.zip"
-VISDRONE_VAL_ZIP="VisDrone2019-DET-val.zip"
-VISDRONE_TEST_ZIP="VisDrone2019-DET-test-dev.zip"
+usage() {
+    cat <<'EOF'
+Usage: scripts/download.sh [--force] <dataset> [<dataset> ...]
+       scripts/download.sh [--force] all
 
-XWOD_SAVE_PATH="$DATASET_SAVE_PATH/xwod"
-XWOD_DATASET_ID="kuantinglai/exwod"
+Datasets: hazydet, visdrone, xwod, dawn, exdark
 
-DAWN_SAVE_PATH="$DATASET_SAVE_PATH/dawn"
-DAWN_DATASET_ID="shuvoalok/dawn-dataset"
+Existing dataset directories are preserved unless --force is supplied.
+EOF
+}
 
-EXDARK_SAVE_PATH="$DATASET_SAVE_PATH/exdark"
-EXDARK_IMAGES_ID="1BHmPgu8EsHoFDDkMGLVoXIlCth2dW6Yx"
-EXDARK_ANNOTATIONS_ID="1P3iO3UYn7KoBi5jiUkogJq96N6maZS1i"
-EXDARK_IMAGES_ZIP="exdark_images.zip"
-EXDARK_ANNOTATIONS_ZIP="exdark_annotations.zip"
+dataset_path() {
+    printf '%s/%s\n' "$DATASET_SAVE_PATH" "$1"
+}
 
-rm -rf "$DATASET_SAVE_PATH"
+prepare_dataset_path() {
+    local path="$1"
 
-echo "Downloading hazydet dataset..."
-mkdir -p "$HAZYDET_SAVE_PATH"
-uv tool run hf download --repo-type dataset "$HAZYDET_DATASET_ID" "$HAZYDET_TRAIN_ZIP" --local-dir "$HAZYDET_SAVE_PATH"
-uv tool run hf download --repo-type dataset "$HAZYDET_DATASET_ID" "$HAZYDET_VAL_ZIP" --local-dir "$HAZYDET_SAVE_PATH"
-uv tool run hf download --repo-type dataset "$HAZYDET_DATASET_ID" "$HAZYDET_TEST_ZIP" --local-dir "$HAZYDET_SAVE_PATH"
-uv tool run hf download --repo-type dataset "$HAZYDET_DATASET_ID" "$HAZYDET_REAL_WORLD_ZIP" --local-dir "$HAZYDET_SAVE_PATH"
+    if [[ -e "$path" ]]; then
+        if [[ "$FORCE" != true ]]; then
+            echo "Refusing to replace existing dataset directory: $path" >&2
+            echo "Use --force to replace only this dataset." >&2
+            return 1
+        fi
+        rm -rf -- "$path"
+    fi
+    mkdir -p "$path"
+}
 
-echo "Extracting hazydet dataset..."
-pushd "$HAZYDET_SAVE_PATH"
-unzip -q "$HAZYDET_TRAIN_ZIP"
-unzip -q "$HAZYDET_VAL_ZIP"
-unzip -q "$HAZYDET_TEST_ZIP"
-unzip -q "$HAZYDET_REAL_WORLD_ZIP"
+download_hazydet() {
+    local path
+    path="$(dataset_path hazydet)"
+    local dataset_id="xdedeerha/HazyDet"
+    local archives=(train.zip val.zip test.zip real_world.zip)
 
-rm "$HAZYDET_TRAIN_ZIP"
-rm "$HAZYDET_VAL_ZIP"
-rm "$HAZYDET_TEST_ZIP"
-rm "$HAZYDET_REAL_WORLD_ZIP"
-popd
+    echo "Downloading HazyDet..."
+    for archive in "${archives[@]}"; do
+        uv tool run hf download --repo-type dataset "$dataset_id" "$archive" --local-dir "$path"
+    done
 
-echo "Downloading visdrone dataset..."
-mkdir -p "$VISDRONE_SAVE_PATH"
-pushd "$VISDRONE_SAVE_PATH"
-uv tool run gdown "$VISDRONE_TEST_URL"
-uv tool run gdown "$VISDRONE_TRAIN_URL"
-uv tool run gdown "$VISDRONE_VAL_URL"
+    echo "Extracting HazyDet..."
+    for archive in "${archives[@]}"; do
+        unzip -q "$path/$archive" -d "$path"
+        rm "$path/$archive"
+    done
+}
 
-echo "Extracting visdrone dataset..."
-unzip -q "$VISDRONE_TRAIN_ZIP"
-unzip -q "$VISDRONE_VAL_ZIP"
-unzip -q "$VISDRONE_TEST_ZIP" -d "VisDrone2019-DET-test-dev"
-rm "$VISDRONE_TEST_ZIP"
-rm "$VISDRONE_TRAIN_ZIP"
-rm "$VISDRONE_VAL_ZIP"
-popd
+download_visdrone() {
+    local path
+    path="$(dataset_path visdrone)"
+    local train_url="https://drive.google.com/file/d/1a2oHjcEcwXP8oUF95qiwrqzACb2YlUhn/view?usp=sharing"
+    local val_url="https://drive.google.com/file/d/1bxK5zgLn0_L8x276eKkuYA_FzwCIjb59/view?usp=sharing"
+    local test_url="https://drive.google.com/open?id=1PFdW_VFSCfZ_sTSZAGjQdifF_Xd5mf0V"
 
-echo "Download and extracting xwod dataset..."
-uv tool run kaggle datasets download "$XWOD_DATASET_ID" --unzip -p "$XWOD_SAVE_PATH"
-mv "$XWOD_SAVE_PATH"/dataset/* "$XWOD_SAVE_PATH"
-rm -rf "$XWOD_SAVE_PATH/dataset"
+    echo "Downloading VisDrone..."
+    pushd "$path" >/dev/null
+    uv tool run gdown "$train_url"
+    uv tool run gdown "$val_url"
+    uv tool run gdown "$test_url"
 
-echo "Downloading and extracting dawn dataset..."
-uv tool run kaggle datasets download "$DAWN_DATASET_ID" --unzip -p "$DAWN_SAVE_PATH"
+    echo "Extracting VisDrone..."
+    unzip -q VisDrone2019-DET-train.zip
+    unzip -q VisDrone2019-DET-val.zip
+    unzip -q VisDrone2019-DET-test-dev.zip -d VisDrone2019-DET-test-dev
+    rm VisDrone2019-DET-train.zip VisDrone2019-DET-val.zip VisDrone2019-DET-test-dev.zip
+    popd >/dev/null
+}
 
-echo "Downloading exdark dataset..."
-mkdir -p "$EXDARK_SAVE_PATH"
-uv tool run gdown "$EXDARK_IMAGES_ID" -O "$EXDARK_SAVE_PATH/$EXDARK_IMAGES_ZIP"
-uv tool run gdown "$EXDARK_ANNOTATIONS_ID" -O "$EXDARK_SAVE_PATH/$EXDARK_ANNOTATIONS_ZIP"
-curl -LfsS \
-  https://raw.githubusercontent.com/cs-chan/Exclusively-Dark-Image-Dataset/master/Groundtruth/imageclasslist.txt \
-  -o "$EXDARK_SAVE_PATH/imageclasslist.txt"
+download_xwod() {
+    local path
+    path="$(dataset_path xwod)"
 
-echo "Extracting exdark dataset..."
-pushd "$EXDARK_SAVE_PATH"
-unzip -q "$EXDARK_IMAGES_ZIP"
-unzip -q "$EXDARK_ANNOTATIONS_ZIP"
-rm "$EXDARK_IMAGES_ZIP"
-rm "$EXDARK_ANNOTATIONS_ZIP"
-rm -rf __MACOSX
-popd
+    echo "Downloading and extracting XWOD..."
+    uv tool run kaggle datasets download kuantinglai/exwod --unzip -p "$path"
+    mv "$path"/dataset/* "$path"
+    rmdir "$path/dataset"
+}
+
+download_dawn() {
+    local path
+    path="$(dataset_path dawn)"
+
+    echo "Downloading and extracting DAWN..."
+    uv tool run kaggle datasets download shuvoalok/dawn-dataset --unzip -p "$path"
+}
+
+download_exdark() {
+    local path
+    path="$(dataset_path exdark)"
+    local images_zip="exdark_images.zip"
+    local annotations_zip="exdark_annotations.zip"
+
+    echo "Downloading ExDark..."
+    uv tool run gdown 1BHmPgu8EsHoFDDkMGLVoXIlCth2dW6Yx -O "$path/$images_zip"
+    uv tool run gdown 1P3iO3UYn7KoBi5jiUkogJq96N6maZS1i -O "$path/$annotations_zip"
+    curl -LfsS \
+        https://raw.githubusercontent.com/cs-chan/Exclusively-Dark-Image-Dataset/master/Groundtruth/imageclasslist.txt \
+        -o "$path/imageclasslist.txt"
+
+    echo "Extracting ExDark..."
+    unzip -q "$path/$images_zip" -d "$path"
+    unzip -q "$path/$annotations_zip" -d "$path"
+    rm "$path/$images_zip" "$path/$annotations_zip"
+    rm -rf "$path/__MACOSX"
+}
+
+is_available_dataset() {
+    local requested="$1"
+    local dataset
+    for dataset in "${AVAILABLE_DATASETS[@]}"; do
+        [[ "$requested" == "$dataset" ]] && return 0
+    done
+    return 1
+}
+
+selected=()
+while (($#)); do
+    case "$1" in
+        --force)
+            FORCE=true
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        --)
+            shift
+            selected+=("$@")
+            break
+            ;;
+        -*)
+            echo "Unknown option: $1" >&2
+            usage >&2
+            exit 2
+            ;;
+        *)
+            selected+=("$1")
+            ;;
+    esac
+    shift
+done
+
+if ((${#selected[@]} == 0)); then
+    usage >&2
+    exit 2
+fi
+
+if [[ " ${selected[*]} " == *" all "* ]]; then
+    if ((${#selected[@]} != 1)); then
+        echo "'all' cannot be combined with dataset keys." >&2
+        exit 2
+    fi
+    selected=("${AVAILABLE_DATASETS[@]}")
+fi
+
+for dataset in "${selected[@]}"; do
+    if ! is_available_dataset "$dataset"; then
+        echo "Unknown dataset: $dataset" >&2
+        usage >&2
+        exit 2
+    fi
+done
+
+for dataset in "${selected[@]}"; do
+    prepare_dataset_path "$(dataset_path "$dataset")"
+    "download_$dataset"
+done
