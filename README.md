@@ -11,8 +11,11 @@ raw dataset files in source_datasets/
 
 Supported source formats:
 
+- `bdd100k`
+- `cityscapes`
 - `coco`
 - `exdark`
+- `pascal_voc`
 - `visdrone_det`
 - `yolo`
 - `yolo_noyml`
@@ -31,23 +34,52 @@ uv run obj-det --help
 
 ## Download raw datasets
 
-There is one helper script:
+Downloads are explicit and dataset-scoped:
 
 ```bash
-bash scripts/download.sh
+bash scripts/download.sh voc2007
+bash scripts/download.sh carpk udacity
+bash scripts/download.sh all
 ```
 
-It downloads and extracts HazyDet, VisDrone, XWOD, DAWN, and ExDark into:
+Raw files are stored under:
 
 ```text
 source_datasets/
 ```
 
-Warning: the script starts by deleting `source_datasets/`, so do not put anything there that you want to keep.
+An existing dataset directory is never replaced implicitly. To reacquire one
+dataset, use `--force`; only that dataset's directory is removed:
 
-The script uses Hugging Face, Google Drive, and Kaggle downloads, so your local auth/setup for those tools may be required.
+```bash
+bash scripts/download.sh --force voc2007
+```
 
-If Google Drive downloads do not work, please comment out the script and download manually.
+Available download keys are `acdc`, `bdd100k`, `carpk`, `cityscapes`, `dawn`,
+`exdark`, `hazydet`, `udacity`, `visdrone`, `voc2007`, and `xwod`. The helper
+uses the official or upstream distribution path for each dataset. Hugging Face,
+Google Drive, Kaggle, Cityscapes, and Roboflow commands may require their normal
+local authentication.
+
+BDD100K is downloaded through its portal. Point the helper at the two staged
+official archives:
+
+```bash
+export BDD100K_IMAGES_ARCHIVE=/downloads/bdd100k_images_100k.zip
+export BDD100K_LABELS_ARCHIVE=/downloads/bdd100k_det_20_labels_trainval.zip
+bash scripts/download.sh bdd100k
+```
+
+Cityscapes uses `csDownload` and prompts for the account associated with the
+dataset license. ACDC, CARPK, Udacity, and Pascal VOC use their public upstream
+package endpoints.
+
+Every configured model input is one ordinary RGB image and every target is a
+list of 2D objects. nuScenes is intentionally not supported because its native
+task requires synchronized multi-camera/LiDAR data, calibration, and 3D box
+projection. Cityscapes was recorded with stereo hardware, but this integration
+uses only `leftImg8bit`; ACDC likewise uses only its released RGB detection
+images and COCO boxes.
 
 ## Dataset YAML configs
 
@@ -57,16 +89,23 @@ Dataset configs live in:
 configs/datasets/
 ```
 
-Existing configs:
+The repository contains 13 source configs and matching dataset refs:
 
-```text
-configs/datasets/hazydet.yaml
-configs/datasets/hazydet_clear.yaml
-configs/datasets/visdrone.yaml
-configs/datasets/xwod.yaml
-configs/datasets/dawn.yaml
-configs/datasets/exdark.yaml
-```
+| Dataset key | Source format | Converted splits | Controlled plan |
+| --- | --- | --- | --- |
+| `acdc` | COCO | train, val | no: public test labels unavailable |
+| `bdd100k` | BDD100K Scalabel JSON | train, val | no: public test labels unavailable |
+| `carpk` | COCO | train, val, test | yes |
+| `cityscapes` | Cityscapes polygons | train, val | no: public test labels unavailable |
+| `dawn` | YOLO without YAML | full | no: validation/test splits unavailable |
+| `exdark` | ExDark | train, val, test | yes |
+| `hazydet` | YOLO | train, val, test | yes |
+| `hazydet_clear` | YOLO | train, val, test | yes |
+| `hazydet_real` | YOLO | train, test | no: validation split unavailable |
+| `udacity` | COCO | train, val, test | yes |
+| `visdrone` | VisDrone detection TXT | train, val, test | yes |
+| `voc2007` | Pascal VOC XML | train, val, test | yes |
+| `xwod` | YOLO | train, val, test | yes |
 
 A config describes where the raw dataset is and how to interpret it.
 
@@ -75,7 +114,7 @@ Important fields:
 ```yaml
 key: xwod                     # dataset key used in output records
 root: source_datasets/xwod    # raw dataset root
-source_format: yolo           # coco | exdark | visdrone_det | yolo | yolo_noyml
+source_format: yolo           # see the supported source-format list above
 
 bbox_policy: clip             # strict | clip | drop
 
@@ -101,6 +140,9 @@ ignore_labels: []             # labels to remove during import
 Split path keys depend on the source format:
 
 - COCO configs use `images` and `annotations`.
+- BDD100K configs use `images` and one Scalabel `annotations` JSON file.
+- Cityscapes configs use `images` and polygon `annotations` directories.
+- Pascal VOC configs use `images`, `annotations`, and `image_set`.
 - VisDrone configs use `images` and `annotations`.
 - YOLO configs use `images` and `labels`; class names come from `root/data.yaml`.
 - `yolo_noyml` configs use `images` and `labels`; class names come from `class_names`.
@@ -124,6 +166,16 @@ output_split: real_tr
 This renames the split in the saved `DatasetDict`. It is useful when a source split name would otherwise be merged or inferred strangely by Hugging Face tooling.
 
 ## Convert a dataset
+
+The selective helper converts one or more configured datasets and refuses to
+replace existing output unless `--force` is explicit:
+
+```bash
+bash scripts/convert.sh voc2007
+bash scripts/convert.sh carpk udacity
+bash scripts/convert.sh --force voc2007
+bash scripts/convert.sh all
+```
 
 Convert all splits and save locally:
 
@@ -229,7 +281,14 @@ Minimal Python usage:
 from datasets import load_from_disk
 
 from obj_det.models.adapters.factory import model_adapter_from_config
-from obj_det.models.schemas import DataLoaderConfig, EvalConfig, ModelConfig, TrainConfig, TransformConfig
+from obj_det.models.schemas import (
+    AugmentationConfig,
+    DataLoaderConfig,
+    EvalConfig,
+    ModelConfig,
+    PreprocessConfig,
+    TrainConfig,
+)
 
 hf_ds = load_from_disk("datasets/hazydet")
 
@@ -277,11 +336,14 @@ Model configs live in `configs/models/`. The current controlled matrix includes:
 - HF Trainer: RT-DETR, D-FINE nano/small, RF-DETR nano/small/medium/base, DETR, Conditional DETR, Deformable DETR, YOLOS tiny/small.
 - TorchVision: Faster R-CNN, RetinaNet, FCOS, and Mask R-CNN box-only.
 
-HazyDet controlled experiment plans live in `configs/plans/`. A plan composes one
-HF dataset reference, one class space, one recipe, and a model group into many
-validated `ExperimentConfig` objects. `configs/experiments/` remains supported
-for direct/debug single-run configs, but plans are the preferred scalable source
-of truth.
+Controlled experiment plans live in `configs/plans/`. Plans are enabled for
+CARPK, ExDark, HazyDet, HazyDet-clear, Udacity, VisDrone, Pascal VOC 2007, and
+XWOD. Each plan composes one HF dataset reference, the shared `traffic6` class
+space, the controlled recipe, and the 25-model detection group. Together they
+expand to 200 validated `ExperimentConfig` objects. Dataset refs without a
+public annotated train/validation/test split remain fail-closed and have no
+controlled plan. `configs/experiments/` remains supported for direct/debug
+single-run configs, but plans are the preferred scalable source of truth.
 
 The controlled recipe fixes AdamW, a one-epoch warmup followed by a 50-epoch
 cosine schedule, checkpointing, and early stopping for every backend. HPO uses
