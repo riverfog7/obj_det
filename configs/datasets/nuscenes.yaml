@@ -1,0 +1,52 @@
+key: nuscenes
+root: source_datasets/nuscenes
+source_format: coco
+
+default_condition: unknown
+default_domain: road
+default_is_synthetic: false
+bbox_policy: clip
+
+splits:
+  train:
+    paths:
+      images: .
+      annotations: generated/train.json
+  val:
+    paths:
+      images: .
+      annotations: generated/val.json
+
+class_map:
+  animal:
+  human.pedestrian.adult: person
+  human.pedestrian.child: person
+  human.pedestrian.construction_worker: person
+  human.pedestrian.personal_mobility:
+  human.pedestrian.police_officer: person
+  human.pedestrian.stroller:
+  human.pedestrian.wheelchair:
+  movable_object.barrier:
+  movable_object.debris:
+  movable_object.pushable_pullable:
+  movable_object.trafficcone:
+  static_object.bicycle_rack:
+  vehicle.bicycle: bicycle
+  vehicle.bus.bendy: bus
+  vehicle.bus.rigid: bus
+  vehicle.car: car
+  vehicle.construction: truck
+  vehicle.emergency.ambulance:
+  vehicle.emergency.police:
+  vehicle.motorcycle: motorcycle
+  vehicle.trailer: truck
+  vehicle.truck: truck
+
+ignore_labels: []
+
+meta:
+  homepage: https://www.nuscenes.org/nuscenes
+  license: dataset-specific terms
+  public_test_annotations: false
+  projection: official_3d_box_convex_hull_to_camera
+  camera_channels: 6

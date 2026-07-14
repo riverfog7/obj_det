@@ -3,7 +3,7 @@
 set -euo pipefail
 
 DATASET_SAVE_PATH="${SOURCE_DATASET_ROOT:-source_datasets}"
-AVAILABLE_DATASETS=(hazydet visdrone xwod dawn exdark voc2007 cityscapes bdd100k acdc carpk udacity)
+AVAILABLE_DATASETS=(hazydet visdrone xwod dawn exdark voc2007 cityscapes bdd100k acdc carpk udacity nuscenes)
 FORCE=false
 
 usage() {
@@ -11,7 +11,7 @@ usage() {
 Usage: scripts/download.sh [--force] <dataset> [<dataset> ...]
        scripts/download.sh [--force] all
 
-Datasets: hazydet, visdrone, xwod, dawn, exdark, voc2007, cityscapes, bdd100k, acdc, carpk, udacity
+Datasets: hazydet, visdrone, xwod, dawn, exdark, voc2007, cityscapes, bdd100k, acdc, carpk, udacity, nuscenes
 
 Existing dataset directories are preserved unless --force is supplied.
 EOF
@@ -220,6 +220,44 @@ download_udacity() {
         -f coco \
         -l "$path" \
         roboflow-gw7yv/self-driving-car/3
+}
+
+download_nuscenes() {
+    local path
+    path="$(dataset_path nuscenes)"
+
+    if [[ -z "${NUSCENES_ARCHIVES:-}" ]]; then
+        echo "nuScenes requires NUSCENES_ARCHIVES as a colon-separated archive list." >&2
+        rmdir "$path"
+        return 2
+    fi
+
+    local archives
+    IFS=: read -r -a archives <<<"$NUSCENES_ARCHIVES"
+    local archive
+    for archive in "${archives[@]}"; do
+        if [[ ! -f "$archive" ]]; then
+            echo "Configured nuScenes archive does not exist: $archive" >&2
+            rmdir "$path"
+            return 2
+        fi
+    done
+
+    echo "Extracting staged nuScenes archives..."
+    for archive in "${archives[@]}"; do
+        case "$archive" in
+            *.zip) unzip -q "$archive" -d "$path" ;;
+            *.tar|*.tar.gz|*.tgz) tar -xf "$archive" -C "$path" ;;
+            *)
+                echo "Unsupported nuScenes archive type: $archive" >&2
+                return 2
+                ;;
+        esac
+    done
+
+    echo "Projecting nuScenes annotations into camera-space COCO files..."
+    uv run --no-project --python 3.12 --with nuscenes-devkit \
+        python scripts/prepare_nuscenes.py "$path"
 }
 
 is_available_dataset() {
