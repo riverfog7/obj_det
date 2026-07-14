@@ -3,7 +3,7 @@
 set -euo pipefail
 
 DATASET_SAVE_PATH="${SOURCE_DATASET_ROOT:-source_datasets}"
-AVAILABLE_DATASETS=(hazydet visdrone xwod dawn exdark voc2007 cityscapes bdd100k acdc carpk)
+AVAILABLE_DATASETS=(hazydet visdrone xwod dawn exdark voc2007 cityscapes bdd100k acdc carpk udacity)
 FORCE=false
 
 usage() {
@@ -11,7 +11,7 @@ usage() {
 Usage: scripts/download.sh [--force] <dataset> [<dataset> ...]
        scripts/download.sh [--force] all
 
-Datasets: hazydet, visdrone, xwod, dawn, exdark, voc2007, cityscapes, bdd100k, acdc, carpk
+Datasets: hazydet, visdrone, xwod, dawn, exdark, voc2007, cityscapes, bdd100k, acdc, carpk, udacity
 
 Existing dataset directories are preserved unless --force is supplied.
 EOF
@@ -209,6 +209,17 @@ download_carpk() {
         -f coco \
         -l "$path" \
         elpida-eleftheriadi/carpk-xk8e1/1
+}
+
+download_udacity() {
+    local path
+    path="$(dataset_path udacity)"
+
+    echo "Downloading Udacity self-driving COCO export from Roboflow..."
+    uv tool run roboflow download \
+        -f coco \
+        -l "$path" \
+        roboflow-gw7yv/self-driving-car/3
 }
 
 is_available_dataset() {

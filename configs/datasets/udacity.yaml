@@ -1,0 +1,43 @@
+key: udacity
+root: source_datasets/udacity
+source_format: coco
+
+default_condition: unknown
+default_domain: road
+default_is_synthetic: false
+bbox_policy: clip
+
+splits:
+  train:
+    paths:
+      images: train
+      annotations: train/_annotations.coco.json
+  val:
+    paths:
+      images: valid
+      annotations: valid/_annotations.coco.json
+  test:
+    paths:
+      images: test
+      annotations: test/_annotations.coco.json
+
+class_map:
+  car: car
+  truck: truck
+  pedestrian: person
+  biker: bicycle
+  trafficLight:
+  trafficLight-Green:
+  trafficLight-GreenLeft:
+  trafficLight-Red:
+  trafficLight-RedLeft:
+  trafficLight-Yellow:
+  trafficLight-YellowLeft:
+
+ignore_labels: []
+
+meta:
+  homepage: https://universe.roboflow.com/roboflow-gw7yv/self-driving-car
+  license: MIT
+  export_version: 3
+  preprocessing: resized_to_512x512
