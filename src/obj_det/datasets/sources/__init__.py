@@ -1,4 +1,5 @@
 from .base import BaseSourceDataset
+from .bdd100k import Bdd100kSourceDataset
 from .cityscapes import CityscapesSourceDataset
 from .coco import CocoSourceDataset
 from .exdark import ExDarkSourceDataset
@@ -10,6 +11,7 @@ from .yolo_noyml import YoloNoYamlSourceDataset
 
 __all__ = [
     "BaseSourceDataset",
+    "Bdd100kSourceDataset",
     "CityscapesSourceDataset",
     "CocoSourceDataset",
     "ExDarkSourceDataset",

@@ -1,0 +1,40 @@
+key: bdd100k
+root: source_datasets/bdd100k
+source_format: bdd100k
+
+default_condition: unknown
+default_domain: road
+default_is_synthetic: false
+bbox_policy: clip
+
+splits:
+  train:
+    paths:
+      images: images/100k/train
+      annotations: labels/det_20/det_train.json
+  val:
+    paths:
+      images: images/100k/val
+      annotations: labels/det_20/det_val.json
+
+class_map:
+  pedestrian: person
+  person: person
+  rider: person
+  bike: bicycle
+  bicycle: bicycle
+  motor: motorcycle
+  motorcycle: motorcycle
+  car: car
+  bus: bus
+  truck: truck
+  train:
+  traffic light:
+  traffic sign:
+
+ignore_labels: []
+
+meta:
+  homepage: https://bdd-data.berkeley.edu/
+  license: dataset-specific terms
+  public_test_annotations: false

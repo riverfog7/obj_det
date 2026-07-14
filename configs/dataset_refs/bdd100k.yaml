@@ -1,0 +1,9 @@
+key: bdd100k
+path: datasets/bdd100k
+train_split: train
+val_split: val
+test_split: test
+default_class_space: traffic6
+meta:
+  controlled_plan_enabled: false
+  controlled_plan_blocker: public_test_annotations_unavailable

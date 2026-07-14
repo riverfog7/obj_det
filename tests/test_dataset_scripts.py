@@ -12,6 +12,26 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 class DatasetScriptsTest(unittest.TestCase):
+    def test_staged_download_fails_without_archives_and_leaves_no_directory(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source_root = Path(tmp) / "source"
+            env = {**os.environ, "SOURCE_DATASET_ROOT": str(source_root)}
+            env.pop("BDD100K_IMAGES_ARCHIVE", None)
+            env.pop("BDD100K_LABELS_ARCHIVE", None)
+
+            result = subprocess.run(
+                ["bash", "scripts/download.sh", "bdd100k"],
+                cwd=REPO_ROOT,
+                env=env,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertFalse((source_root / "bdd100k").exists())
+            self.assertIn("requires BDD100K_IMAGES_ARCHIVE", result.stderr)
+
     def test_download_preserves_existing_dataset_without_force(self):
         with tempfile.TemporaryDirectory() as tmp:
             source_root = Path(tmp) / "source"

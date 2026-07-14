@@ -3,7 +3,7 @@
 set -euo pipefail
 
 DATASET_SAVE_PATH="${SOURCE_DATASET_ROOT:-source_datasets}"
-AVAILABLE_DATASETS=(hazydet visdrone xwod dawn exdark voc2007 cityscapes)
+AVAILABLE_DATASETS=(hazydet visdrone xwod dawn exdark voc2007 cityscapes bdd100k)
 FORCE=false
 
 usage() {
@@ -11,7 +11,7 @@ usage() {
 Usage: scripts/download.sh [--force] <dataset> [<dataset> ...]
        scripts/download.sh [--force] all
 
-Datasets: hazydet, visdrone, xwod, dawn, exdark, voc2007, cityscapes
+Datasets: hazydet, visdrone, xwod, dawn, exdark, voc2007, cityscapes, bdd100k
 
 Existing dataset directories are preserved unless --force is supplied.
 EOF
@@ -137,6 +137,31 @@ download_cityscapes() {
         unzip -q "$path/$archive" -d "$path"
         rm "$path/$archive"
     done
+}
+
+download_bdd100k() {
+    local path
+    path="$(dataset_path bdd100k)"
+
+    if [[ -z "${BDD100K_IMAGES_ARCHIVE:-}" || -z "${BDD100K_LABELS_ARCHIVE:-}" ]]; then
+        echo "BDD100K requires BDD100K_IMAGES_ARCHIVE and BDD100K_LABELS_ARCHIVE." >&2
+        rmdir "$path"
+        return 2
+    fi
+    if [[ ! -f "$BDD100K_IMAGES_ARCHIVE" || ! -f "$BDD100K_LABELS_ARCHIVE" ]]; then
+        echo "A configured BDD100K archive does not exist." >&2
+        rmdir "$path"
+        return 2
+    fi
+
+    echo "Extracting staged BDD100K archives..."
+    unzip -q "$BDD100K_IMAGES_ARCHIVE" -d "$path"
+    unzip -q "$BDD100K_LABELS_ARCHIVE" -d "$path"
+    if [[ -d "$path/bdd100k" ]]; then
+        shopt -s dotglob nullglob
+        mv "$path"/bdd100k/* "$path"
+        rmdir "$path/bdd100k"
+    fi
 }
 
 is_available_dataset() {
