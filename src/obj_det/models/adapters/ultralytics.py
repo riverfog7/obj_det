@@ -6,6 +6,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Iterator
 
+import numpy as np
 import torch
 from datasets import Dataset
 from torch.utils.data import DataLoader
@@ -165,7 +166,7 @@ class UltralyticsDetectionAdapter(BaseModelAdapter):
             originals = [parser.parse(row) for row in rows]
             samples = [transform(sample) for sample in originals]
             results = model.predict(
-                source=[sample.image for sample in samples],
+                source=[np.ascontiguousarray(sample.image[..., ::-1]) for sample in samples],
                 imgsz=predict_cfg.preprocess.height,
                 conf=predict_cfg.conf_threshold,
                 iou=predict_cfg.iou_threshold,

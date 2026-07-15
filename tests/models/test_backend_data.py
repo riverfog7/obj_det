@@ -3,6 +3,7 @@ from __future__ import annotations
 import unittest
 from pathlib import Path
 
+import torch
 from datasets import Dataset
 
 from obj_det.datasets.models import BBox
@@ -12,6 +13,7 @@ from obj_det.models.data.sample import DetectionBatch
 from obj_det.models.data.loader import dataloader_kwargs
 from obj_det.models.data.profiling import measure_dataloader, measure_decode_backend, measure_transform
 from obj_det.models.data.hf_targets import (
+    post_process_hf_detections,
     make_hf_detection_collate,
     sample_to_coco_annotation,
     validate_hf_processor_size,
@@ -137,20 +139,105 @@ class BackendDataTest(unittest.TestCase):
                     "labels": kwargs["annotations"],
                 }
 
-        import torch
-
         ds = Dataset.from_list([row(), row(image_id="img2")])
         parser = HFDetectionRowParser(["car"], "meta")
         source = DetectionSampleSource(ds, parser)
         transform = DetectionTransform(PreprocessConfig(resize_mode="letterbox", height=64, width=64))
         dataset = HFTrainerDetectionDataset(source, transform)
         processor = FakeProcessor()
-        collate = make_hf_detection_collate(processor)
+        collate = make_hf_detection_collate(
+            processor,
+            PreprocessConfig(resize_mode="letterbox", height=64, width=64),
+        )
         batch = collate([dataset[0], dataset[1]])
 
         self.assertEqual(len(processor.calls), 1)
         self.assertEqual(len(processor.calls[0]["images"]), 2)
         self.assertEqual(tuple(batch["pixel_values"].shape), (2, 3, 64, 64))
+
+    def test_hf_variable_size_collator_requires_padding_mask(self):
+        class FakeProcessor:
+            def __init__(self):
+                self.calls = []
+
+            def __call__(self, **kwargs):
+                self.calls.append(kwargs)
+                images = kwargs["images"]
+                height = max(image.shape[0] for image in images)
+                width = max(image.shape[1] for image in images)
+                pixel_mask = torch.zeros((len(images), height, width), dtype=torch.long)
+                for index, image in enumerate(images):
+                    pixel_mask[index, : image.shape[0], : image.shape[1]] = 1
+                return {
+                    "pixel_values": torch.zeros((len(images), 3, height, width)),
+                    "pixel_mask": pixel_mask,
+                    "labels": kwargs["annotations"],
+                }
+
+        preprocess = PreprocessConfig(resize_mode="shortest_edge", shortest_edge=32, longest_edge=64)
+        ds = Dataset.from_list([row(), row(image_id="img2", size=(16, 24))])
+        parser = HFDetectionRowParser(["car"], "meta")
+        source = DetectionSampleSource(ds, parser)
+        dataset = HFTrainerDetectionDataset(source, DetectionTransform(preprocess))
+        processor = FakeProcessor()
+
+        batch = make_hf_detection_collate(processor, preprocess)([dataset[0], dataset[1]])
+
+        self.assertTrue(processor.calls[0]["do_pad"])
+        self.assertFalse(processor.calls[0]["do_resize"])
+        self.assertEqual(tuple(batch["pixel_values"].shape), (2, 3, 48, 43))
+        self.assertEqual(batch["pixel_mask"][0, :, :43].sum().item(), 32 * 43)
+        self.assertEqual(batch["pixel_mask"][0, 32:, :].sum().item(), 0)
+        self.assertEqual(batch["pixel_mask"][1, :, :32].sum().item(), 48 * 32)
+        self.assertEqual(batch["pixel_mask"][1, :, 32:].sum().item(), 0)
+
+    def test_hf_variable_size_collator_rejects_missing_padding_mask(self):
+        class FakeProcessor:
+            def __call__(self, **kwargs):
+                return {"pixel_values": torch.zeros((1, 3, 32, 32))}
+
+        preprocess = PreprocessConfig(resize_mode="shortest_edge", shortest_edge=32, longest_edge=64)
+        parser = HFDetectionRowParser(["car"], "meta")
+        sample = DetectionTransform(preprocess)(parser.parse(row()))
+
+        with self.assertRaisesRegex(ValueError, "pixel_mask"):
+            make_hf_detection_collate(FakeProcessor(), preprocess)([sample])
+
+    def test_hf_postprocessing_passes_detection_cap_when_supported(self):
+        class FakeProcessor:
+            def __init__(self):
+                self.top_k = None
+
+            def post_process_object_detection(self, outputs, threshold, target_sizes, top_k=100):
+                self.top_k = top_k
+                return []
+
+        processor = FakeProcessor()
+        post_process_hf_detections(
+            processor,
+            object(),
+            threshold=0.1,
+            target_sizes=object(),
+            max_detections=300,
+        )
+
+        self.assertEqual(processor.top_k, 300)
+
+    def test_hf_postprocessing_omits_unsupported_detection_cap(self):
+        class FakeProcessor:
+            def post_process_object_detection(self, outputs, threshold, target_sizes):
+                return [threshold, target_sizes]
+
+        target_sizes = object()
+        result = post_process_hf_detections(
+            FakeProcessor(),
+            object(),
+            threshold=0.1,
+            target_sizes=target_sizes,
+            max_detections=300,
+        )
+
+        self.assertEqual(result, [0.1, target_sizes])
 
     def test_dataloader_kwargs_only_pass_worker_options_when_enabled(self):
         self.assertEqual(

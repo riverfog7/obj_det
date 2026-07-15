@@ -11,11 +11,11 @@ import torch
 from datasets import Dataset
 
 from obj_det.models.adapters.ultralytics import _NoOpEpochScheduler, UltralyticsDetectionAdapter
-from obj_det.models.schemas import DataLoaderConfig, EvalConfig, ModelConfig, PreprocessConfig, TrainConfig
+from obj_det.models.schemas import DataLoaderConfig, EvalConfig, ModelConfig, PredictConfig, PreprocessConfig, TrainConfig
 from obj_det.models.schemas.artifact import ModelArtifact
 from obj_det.models.training import CheckpointState
 
-from .helpers import row
+from .helpers import image_bytes, row
 
 
 class RecordingLogger:
@@ -180,6 +180,48 @@ class UltralyticsLoggingTest(unittest.TestCase):
 
         self.assertEqual(result.num_predictions, 1)
         self.assertEqual(result.meta["invalid_prediction_boxes_dropped"], 1)
+
+    def test_predict_converts_canonical_rgb_to_provider_bgr(self):
+        captured_sources = []
+
+        class FakeYOLO:
+            def __init__(self, checkpoint):
+                pass
+
+            def predict(self, **kwargs):
+                captured_sources.extend(kwargs["source"])
+                boxes = SimpleNamespace(
+                    xyxy=torch.empty((0, 4)),
+                    conf=torch.empty(0),
+                    cls=torch.empty(0),
+                )
+                return [SimpleNamespace(boxes=boxes)]
+
+        fake_ultralytics = ModuleType("ultralytics")
+        fake_ultralytics.YOLO = FakeYOLO
+        adapter = UltralyticsDetectionAdapter(
+            ModelConfig(key="yolo", backend="ultralytics", model_name_or_path="unused.pt", preprocess=PreprocessConfig(resize_mode="letterbox", height=32, width=32))
+        )
+        artifact = ModelArtifact(
+            model_key=adapter.key,
+            backend=adapter.backend,
+            run_key="r",
+            classes=["car"],
+            label_mode="meta",
+        )
+        dataset_row = row()
+        dataset_row["image"]["bytes"] = image_bytes(color=(10, 20, 30))
+
+        with patch.dict(sys.modules, {"ultralytics": fake_ultralytics}):
+            list(
+                adapter.predict(
+                    Dataset.from_list([dataset_row]),
+                    artifact,
+                    PredictConfig(classes=["car"], preprocess=PreprocessConfig(resize_mode="letterbox", height=32, width=32)),
+                )
+            )
+
+        self.assertEqual(captured_sources[0][4, 0].tolist(), [30, 20, 10])
 
     def test_controlled_protocol_disables_provider_augmentation_overrides(self):
         adapter = UltralyticsDetectionAdapter(

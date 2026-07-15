@@ -9,7 +9,12 @@ from datasets import Dataset
 
 from obj_det.models.adapters.base import BaseModelAdapter
 from obj_det.models.data.hf_dataset import HFTrainerDetectionDataset
-from obj_det.models.data.hf_targets import make_hf_detection_collate, validate_hf_processor_size
+from obj_det.models.data.hf_targets import (
+    hf_processor_kwargs,
+    make_hf_detection_collate,
+    post_process_hf_detections,
+    validate_hf_processor_size,
+)
 from obj_det.models.data.row_parser import HFDetectionRowParser
 from obj_det.models.data.row_batches import iter_hf_row_batches
 from obj_det.models.data.sample_source import DetectionSampleSource
@@ -71,7 +76,6 @@ class HFTrainerDetectionAdapter(BaseModelAdapter):
         parser = HFDetectionRowParser(classes=train_cfg.classes, label_mode=train_cfg.label_mode, decode_backend=train_cfg.loader.decode_backend)
         transform = build_detection_transform(train_cfg.preprocess, train_cfg.augmentation, seed=train_cfg.seed)
         eval_transform = build_detection_transform(train_cfg.preprocess)
-        processor_kwargs = train_cfg.backend_params.get("processor_kwargs", {"do_resize": False})
         train_source = DetectionSampleSource(train_ds, parser, predecode_images=train_cfg.loader.predecode_images)
         val_source = DetectionSampleSource(val_ds, parser, predecode_images=train_cfg.loader.predecode_images)
         train_data = HFTrainerDetectionDataset(train_source, transform)
@@ -171,7 +175,7 @@ class HFTrainerDetectionAdapter(BaseModelAdapter):
             args=args,
             train_dataset=train_data,
             eval_dataset=val_data,
-            data_collator=make_hf_detection_collate(processor, processor_kwargs),
+            data_collator=make_hf_detection_collate(processor, train_cfg.preprocess),
             processing_class=processor,
             protocol_processor=processor,
             callbacks=[make_transformers_logging_callback(TrainerCallback, logger, log_prefix)] if logger else None,
@@ -270,7 +274,7 @@ class HFTrainerDetectionAdapter(BaseModelAdapter):
             decode_backend=predict_cfg.backend_params.get("decode_backend", "pil"),
         )
         transform = build_detection_transform(predict_cfg.preprocess)
-        processor_kwargs = predict_cfg.backend_params.get("processor_kwargs", {"do_resize": False})
+        processor_kwargs = hf_processor_kwargs(predict_cfg.preprocess)
 
         with torch.no_grad():
             for rows in iter_hf_row_batches(ds, predict_cfg.batch_size):
@@ -281,6 +285,8 @@ class HFTrainerDetectionAdapter(BaseModelAdapter):
                     return_tensors="pt",
                     **processor_kwargs,
                 )
+                if predict_cfg.preprocess.resize_mode == "shortest_edge" and "pixel_mask" not in inputs:
+                    raise ValueError("Variable-size HF batches require a pixel_mask")
                 inputs = {key: value.to(device) for key, value in inputs.items() if isinstance(value, torch.Tensor)}
                 outputs = model(**inputs)
                 target_sizes = torch.tensor(
@@ -288,10 +294,12 @@ class HFTrainerDetectionAdapter(BaseModelAdapter):
                     dtype=torch.float32,
                     device=device,
                 )
-                results = processor.post_process_object_detection(
+                results = post_process_hf_detections(
+                    processor,
                     outputs,
                     threshold=predict_cfg.conf_threshold,
                     target_sizes=target_sizes,
+                    max_detections=predict_cfg.max_detections_per_image,
                 )
 
                 for original, sample, result in zip(original_samples, samples, results):

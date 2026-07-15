@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 from typing import Any, Mapping
 
 import numpy as np
@@ -45,10 +46,30 @@ def sample_to_coco_annotation(sample: DetectionSample, *, image_id: int) -> dict
     return {"image_id": image_id, "annotations": annotations}
 
 
-def make_hf_detection_collate(processor, processor_kwargs: dict[str, Any] | None = None):
+def hf_processor_kwargs(preprocess: PreprocessConfig) -> dict[str, bool]:
     kwargs = {"do_resize": False}
-    if processor_kwargs:
-        kwargs.update(processor_kwargs)
+    if preprocess.resize_mode == "shortest_edge":
+        kwargs["do_pad"] = True
+    return kwargs
+
+
+def post_process_hf_detections(
+    processor,
+    outputs,
+    *,
+    threshold: float,
+    target_sizes,
+    max_detections: int,
+):
+    method = processor.post_process_object_detection
+    kwargs = {"threshold": threshold, "target_sizes": target_sizes}
+    if "top_k" in inspect.signature(method).parameters:
+        kwargs["top_k"] = max_detections
+    return method(outputs, **kwargs)
+
+
+def make_hf_detection_collate(processor, preprocess: PreprocessConfig):
+    kwargs = hf_processor_kwargs(preprocess)
 
     def collate(samples: list[DetectionSample]) -> dict[str, Any]:
         for sample in samples:
@@ -64,6 +85,8 @@ def make_hf_detection_collate(processor, processor_kwargs: dict[str, Any] | None
             return_tensors="pt",
             **kwargs,
         )
+        if preprocess.resize_mode == "shortest_edge" and "pixel_mask" not in encoded:
+            raise ValueError("Variable-size HF batches require a pixel_mask")
         return dict(encoded)
 
     return collate
