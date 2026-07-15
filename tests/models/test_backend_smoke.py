@@ -43,13 +43,20 @@ class BackendSmokeTest(unittest.TestCase):
     def test_hf_trainer_smoke(self):
         ds = tiny_dataset()
         with TemporaryDirectory() as tmp:
-            preprocess = PreprocessConfig(resize_mode="letterbox", height=64, width=64)
+            preprocess = PreprocessConfig(
+                resize_mode="shortest_edge", shortest_edge=64, longest_edge=64
+            )
             adapter = model_adapter_from_config(ModelConfig(
                 key="tiny_detr",
                 backend="hf_trainer",
                 detector_pretraining_dataset="coco",
                 model_name_or_path="hf-internal-testing/tiny-random-detr",
                 preprocess=preprocess,
+                params={
+                    "processor_from_pretrained_kwargs": {
+                        "size": {"shortest_edge": 64, "longest_edge": 64}
+                    }
+                },
             ))
             artifact = adapter.train(ds, ds, TrainConfig(
                 run_key="hf_smoke",

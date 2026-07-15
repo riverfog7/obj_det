@@ -308,7 +308,7 @@ The model layer consumes only converted Hugging Face datasets:
 ```text
 HF DatasetDict
     -> row parser
-    -> shared preprocessing / augmentation
+    -> model-native preprocessing / shared augmentation
     -> model adapter
     -> canonical predictions
     -> shared evaluator
@@ -338,10 +338,17 @@ hf_ds = load_from_disk("datasets/hazydet")
 model_cfg = ModelConfig(
     key="fasterrcnn_r50",
     backend="torchvision",
+    detector_pretraining_dataset="coco",
     model_name_or_path="fasterrcnn_resnet50_fpn",
+    weights="DEFAULT",
+    preprocess=PreprocessConfig(
+        resize_mode="shortest_edge",
+        shortest_edge=800,
+        longest_edge=1333,
+    ),
 )
 adapter = model_adapter_from_config(model_cfg)
-preprocess = PreprocessConfig(image_size=640)
+preprocess = model_cfg.preprocess
 augmentation = AugmentationConfig(policy="basic", horizontal_flip_p=0.5, color_jitter_strength=0.1)
 
 train_cfg = TrainConfig(
@@ -353,7 +360,7 @@ train_cfg = TrainConfig(
     augmentation=augmentation,
     loader=DataLoaderConfig(num_workers=16, persistent_workers=True, prefetch_factor=4),
     max_epochs=50,
-    batch_size=16,
+    batch_size=2,
 )
 
 eval_cfg = EvalConfig(
@@ -362,7 +369,12 @@ eval_cfg = EvalConfig(
     preprocess=preprocess,
 )
 
-artifact = adapter.train(hf_ds["train"], hf_ds["validation"], train_cfg)
+artifact = adapter.train(
+    hf_ds["train"],
+    hf_ds["validation"],
+    train_cfg,
+    epoch_eval_cfg=eval_cfg,
+)
 result = adapter.evaluate(hf_ds["test"], artifact, eval_cfg)
 print(result.primary_metric, result.primary_metric_value)
 ```
@@ -380,19 +392,26 @@ Model configs live in `configs/models/`. The current controlled matrix includes:
 - TorchVision: Faster R-CNN, RetinaNet, FCOS, and Mask R-CNN box-only.
 
 Controlled experiment plans live in `configs/plans/`. Plans are enabled for
-CARPK, ExDark, HazyDet, HazyDet-clear, Udacity, VisDrone, Pascal VOC 2007, and
-XWOD. Each plan composes one HF dataset reference, the shared `traffic6` class
-space, the controlled recipe, and the 25-model detection group. Together they
-expand to 200 validated `ExperimentConfig` objects. Dataset refs without a
-public annotated train/validation/test split remain fail-closed and have no
-controlled plan. `configs/experiments/` remains supported for direct/debug
-single-run configs, but plans are the preferred scalable source of truth.
+CARPK, DAWN, ExDark, HazyDet, HazyDet-clear, the merged Traffic6 dataset,
+Udacity, VisDrone, Pascal VOC 2007, and XWOD. Each plan composes one HF dataset
+reference, the shared `traffic6` class space, the controlled recipe, and the
+25-model detection group. Together the ten plans expand to 250 validated
+`ExperimentConfig` objects. Dataset refs without a usable annotated
+train/validation/test split remain fail-closed and have no controlled plan.
+`configs/experiments/` remains supported for direct/debug single-run configs,
+but plans are the preferred scalable source of truth.
 
-The controlled recipe fixes AdamW, a one-epoch warmup followed by a 50-epoch
-cosine schedule, checkpointing, and early stopping for every backend. HPO uses
+The controlled recipe is `configs/recipes/controlled_native.yaml`. Every model
+declares its own native input geometry while the comparison keeps batch size 2
+with no gradient accumulation, COCO detector pretraining, fully trainable
+backbones, AdamW, gradient clipping at 1.0, raw (non-EMA) weights, deterministic
+execution, and a one-epoch warmup followed by a 50-epoch cosine schedule.
+Main training validates with the complete evaluator every epoch and applies
+shared checkpointing and early stopping. HPO uses
 `configs/search_spaces/global_learning_rate.yaml`: eight independent TPE trials
 per model tune only canonical `learning_rate` for 10 epochs while retaining the
-50-epoch scheduler horizon. Backend defaults contain runtime sizing only.
+50-epoch scheduler horizon. Each trial performs one complete validation after
+training; HPO does not use per-epoch validation or early stopping.
 
 ```python
 from obj_det.models.plan import (
@@ -464,7 +483,7 @@ Reusable model-training config directories:
 ```text
 configs/dataset_refs/    # HF dataset path and split names
 configs/class_spaces/    # labels and native/meta label mode
-configs/recipes/         # protocol defaults, preprocess, augmentation, HPO/final defaults
+configs/recipes/         # shared optimizer, schedule, evaluation, HPO/final defaults
 configs/model_groups/    # reusable model lists
 configs/plans/           # preferred scalable experiment entrypoints
 configs/models/          # backend/model identity
@@ -499,5 +518,6 @@ logging:
 Logged values include backend train scalars and evaluator metrics including
 per-class, per-condition, per-domain, and per-size results. `models optimize`
 creates one logging run per HPO trial, grouped by study name. `models final`
-creates one logging run per seed, grouped by final run name. Images, prediction
-previews, tables, and plots are not logged.
+creates one logging run per seed, grouped by final run name, and logs the same
+complete validation groups at every epoch. Images, prediction previews, tables,
+and plots are not logged.

@@ -225,6 +225,47 @@ class ExperimentPlanTest(unittest.TestCase):
             self.assertEqual(exp.eval.batch_size, 2)
             self.assertEqual(exp.predict.batch_size, 2)
 
+    def test_repo_controlled_matrix_expands_all_ten_plans(self):
+        expected_dataset_keys = {
+            "carpk",
+            "dawn",
+            "exdark",
+            "hazydet",
+            "hazydet_clear",
+            "merged_traffic6",
+            "udacity",
+            "visdrone",
+            "voc2007",
+            "xwod",
+        }
+        plan_paths = sorted(Path("configs/plans").glob("*_controlled.yaml"))
+
+        self.assertEqual(
+            {path.stem.removesuffix("_controlled") for path in plan_paths},
+            expected_dataset_keys,
+        )
+
+        total_experiments = 0
+        for path in plan_paths:
+            dataset_key = path.stem.removesuffix("_controlled")
+            plan = load_experiment_plan(path)
+            exps = expand_experiment_plan(plan)
+            with self.subTest(plan=path.name):
+                self.assertEqual(plan.recipe_file, Path("../recipes/controlled_native.yaml"))
+                self.assertEqual(plan.class_space_file, Path("../class_spaces/traffic6.yaml"))
+                self.assertEqual(plan.model_group_file, Path("../model_groups/detection_main.yaml"))
+                self.assertEqual(len(exps), 25)
+                self.assertTrue(
+                    all(exp.dataset.path == Path(f"datasets/{dataset_key}") for exp in exps)
+                )
+                self.assertTrue(all(exp.train.batch_size == 2 for exp in exps))
+                self.assertTrue(
+                    all(set(exp.search_space.params) == {"learning_rate"} for exp in exps)
+                )
+            total_experiments += len(exps)
+
+        self.assertEqual(total_experiments, 250)
+
     def _write_plan_tree(self, root: Path, *, include_torchvision_default: bool = True) -> Path:
         for name in [
             "dataset_refs",
