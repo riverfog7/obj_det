@@ -467,7 +467,7 @@ class TuningTest(unittest.TestCase):
         self.assertIsNone(runner._boundary_warning({"learning_rate": (3.0e-6 * 3.0e-3) ** 0.5}, search_space))
         self.assertIn("upper log-space boundary", runner._boundary_warning({"learning_rate": 3.0e-3}, search_space))
 
-    def test_hpo_uses_detailed_eval_by_default(self):
+    def test_hpo_always_uses_full_eval_config(self):
         class EvalConfigRecordingAdapter(DummyAdapter):
             def __init__(self):
                 super().__init__()
@@ -507,35 +507,6 @@ class TuningTest(unittest.TestCase):
         self.assertTrue(used_cfg.compute_per_condition)
         self.assertTrue(used_cfg.compute_per_domain)
         self.assertTrue(used_cfg.compute_per_size)
-
-    def test_hpo_can_opt_out_of_detailed_eval(self):
-        class EvalConfigRecordingAdapter(DummyAdapter):
-            def __init__(self):
-                super().__init__()
-                self.eval_configs = []
-
-            def evaluate(self, ds, artifact, eval_cfg, *, logger=None, log_prefix=None):
-                self.eval_configs.append(eval_cfg)
-                return super().evaluate(ds, artifact, eval_cfg, logger=logger, log_prefix=log_prefix)
-
-        sys.modules["optuna"] = FakeOptuna([
-            {"learning_rate": 0.3},
-        ])
-        ds = Dataset.from_list([row()])
-        adapter = EvalConfigRecordingAdapter()
-        with TemporaryDirectory() as tmp:
-            preprocess = PreprocessConfig(resize_mode="letterbox", height=32, width=32)
-            TuningRunner().optimize(
-                adapter=adapter,
-                train_ds=ds,
-                val_ds=ds,
-                base_train_cfg=TrainConfig(run_key="r", classes=["car"], output_dir=Path(tmp) / "base", preprocess=preprocess),
-                eval_cfg=EvalConfig(classes=["car"], preprocess=preprocess, compute_per_class=True),
-                search_space=learning_rate_search_space(),
-                tuning_cfg=TuningConfig(study_name="s", n_trials=1, output_dir=Path(tmp), detailed_eval=False),
-            )
-
-        self.assertFalse(adapter.eval_configs[0].compute_per_class)
 
     def test_hpo_logs_trial_train_eval_and_objective(self):
         sys.modules["optuna"] = FakeOptuna([

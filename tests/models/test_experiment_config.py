@@ -129,7 +129,6 @@ class ExperimentConfigTest(unittest.TestCase):
         self.assertEqual(tuning.pruner, "none")
         self.assertEqual(tuning.objective_metric, "map_50_95")
         self.assertEqual(tuning.save_strategy, "final_only")
-        self.assertTrue(tuning.detailed_eval)
 
         train_kwargs = {
             "run_key": "r",
@@ -137,9 +136,15 @@ class ExperimentConfigTest(unittest.TestCase):
             "output_dir": Path("runs/r"),
             "preprocess": PreprocessConfig(resize_mode="letterbox", height=32, width=32),
         }
-        self.assertEqual(TrainConfig(**train_kwargs, protocol="equal_hpo").protocol, "equal_hpo")
         with self.assertRaises(ValidationError):
-            TrainConfig(**train_kwargs, protocol="ecosystem")
+            TrainConfig(**train_kwargs, protocol="equal_hpo")
+
+        with self.assertRaises(ValidationError):
+            TuningConfig(
+                study_name="s",
+                output_dir=Path("runs/hpo"),
+                detailed_eval=False,
+            )
 
         storage_cfg = TuningConfig(
             study_name="s",

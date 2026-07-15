@@ -123,7 +123,7 @@ class TuningRunner:
                 result = adapter.evaluate(
                     val_ds,
                     artifact,
-                    self._hpo_eval_cfg(eval_cfg, detailed=tuning_cfg.detailed_eval),
+                    eval_cfg,
                     logger=logger,
                     log_prefix="val",
                 )
@@ -226,19 +226,6 @@ class TuningRunner:
             best_trial=best,
             trials=trial_results,
             meta={"boundary_warning": boundary_warning} if boundary_warning is not None else {},
-        )
-
-    def _hpo_eval_cfg(self, eval_cfg: EvalConfig, *, detailed: bool) -> EvalConfig:
-        if detailed:
-            return eval_cfg
-        return eval_cfg.model_copy(
-            update={
-                "compute_per_class": False,
-                "compute_per_condition": False,
-                "compute_per_domain": False,
-                "compute_per_size": False,
-            },
-            deep=True,
         )
 
     def _sample_hparams(self, trial, search_space: SearchSpace) -> dict[str, Any]:

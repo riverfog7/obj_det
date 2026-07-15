@@ -211,7 +211,6 @@ class ExperimentPlanTest(unittest.TestCase):
                 self.assertEqual(exp.tuning.pruner, "none")
                 self.assertEqual(exp.tuning.save_strategy, "final_only")
                 self.assertTrue(exp.tuning.catch_trial_errors)
-                self.assertTrue(exp.tuning.detailed_eval)
                 self.assertEqual(set(exp.search_space.params), {"learning_rate"})
                 self.assertTrue(exp.train.eval_strategy.enabled)
                 self.assertTrue(exp.eval.compute_per_class)

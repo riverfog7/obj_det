@@ -66,7 +66,6 @@ tuning:
   save_strategy: final_only
   early_stopping: false
   catch_trial_errors: true
-  detailed_eval: true
 
 final:
   seeds: [0, 1, 2]
