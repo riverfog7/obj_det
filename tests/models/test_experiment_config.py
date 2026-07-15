@@ -13,6 +13,43 @@ from obj_det.models.schemas.tuning import TuningConfig
 
 
 class ExperimentConfigTest(unittest.TestCase):
+    def test_preprocess_modes_validate_exclusive_dimensions(self):
+        self.assertEqual(
+            PreprocessConfig(resize_mode="letterbox", height=640, width=640).height,
+            640,
+        )
+        self.assertEqual(
+            PreprocessConfig(resize_mode="exact", height=384, width=512).width,
+            512,
+        )
+        self.assertEqual(
+            PreprocessConfig(
+                resize_mode="shortest_edge",
+                shortest_edge=800,
+                longest_edge=1333,
+            ).longest_edge,
+            1333,
+        )
+
+        invalid = [
+            {"resize_mode": "letterbox", "height": 640, "width": 512},
+            {"resize_mode": "exact", "height": 640},
+            {
+                "resize_mode": "exact",
+                "height": 640,
+                "width": 640,
+                "shortest_edge": 640,
+            },
+            {
+                "resize_mode": "shortest_edge",
+                "shortest_edge": 1333,
+                "longest_edge": 800,
+            },
+        ]
+        for values in invalid:
+            with self.subTest(values=values), self.assertRaises(ValidationError):
+                PreprocessConfig.model_validate(values)
+
     def test_classes_are_injected_into_train_eval_predict(self):
         cfg = ExperimentConfig.model_validate(
             {
@@ -22,8 +59,8 @@ class ExperimentConfigTest(unittest.TestCase):
                     "key": "m",
                     "backend": "torchvision",
                     "model_name_or_path": "fasterrcnn_resnet50_fpn",
+                    "preprocess": {"resize_mode": "letterbox", "height": 320, "width": 320},
                 },
-                "preprocess": {"image_size": 320},
                 "augmentation": {
                     "policy": "basic",
                     "horizontal_flip_p": 0.5,
@@ -55,7 +92,7 @@ class ExperimentConfigTest(unittest.TestCase):
         self.assertEqual(cfg.eval.classes, ["car", "person"])
         self.assertEqual(cfg.predict.classes, ["car", "person"])
         self.assertEqual(cfg.eval.label_mode, "meta")
-        self.assertEqual(cfg.predict.preprocess.image_size, 320)
+        self.assertEqual(cfg.predict.preprocess.height, 320)
         self.assertEqual(cfg.train.augmentation.horizontal_flip_p, 0.5)
         self.assertTrue(cfg.train.eval_strategy.enabled)
         self.assertEqual(cfg.train.eval_strategy.every_epochs, 1)
@@ -86,7 +123,7 @@ class ExperimentConfigTest(unittest.TestCase):
             "run_key": "r",
             "classes": ["car"],
             "output_dir": Path("runs/r"),
-            "preprocess": PreprocessConfig(image_size=32),
+            "preprocess": PreprocessConfig(resize_mode="letterbox", height=32, width=32),
         }
         self.assertEqual(TrainConfig(**train_kwargs, protocol="equal_hpo").protocol, "equal_hpo")
         with self.assertRaises(ValidationError):
@@ -104,11 +141,11 @@ class ExperimentConfigTest(unittest.TestCase):
                 {
                     "dataset": {"path": "datasets/tiny"},
                     "classes": ["car"],
-                    "preprocess": {"image_size": 32},
                     "model": {
                         "key": "m",
                         "backend": "torchvision",
                         "model_name_or_path": "fasterrcnn_resnet50_fpn",
+                        "preprocess": {"resize_mode": "letterbox", "height": 32, "width": 32},
                     },
                     "train": {
                         "run_key": "r",
@@ -126,7 +163,6 @@ class ExperimentConfigTest(unittest.TestCase):
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
             (root / "models").mkdir()
-            (root / "preprocess").mkdir()
             (root / "augmentations").mkdir()
             (root / "spaces").mkdir()
             (root / "experiments").mkdir()
@@ -136,11 +172,14 @@ class ExperimentConfigTest(unittest.TestCase):
                         "key: m",
                         "backend: torchvision",
                         "model_name_or_path: fasterrcnn_resnet50_fpn",
+                        "preprocess:",
+                        "  resize_mode: letterbox",
+                        "  height: 64",
+                        "  width: 64",
                     ]
                 ),
                 encoding="utf-8",
             )
-            (root / "preprocess" / "p.yaml").write_text("image_size: 64\n", encoding="utf-8")
             (root / "augmentations" / "a.yaml").write_text(
                 "\n".join(
                     [
@@ -171,7 +210,6 @@ class ExperimentConfigTest(unittest.TestCase):
                         "  path: datasets/tiny",
                         "classes: [car]",
                         "model_file: ../models/m.yaml",
-                        "preprocess_file: ../preprocess/p.yaml",
                         "augmentation_file: ../augmentations/a.yaml",
                         "train:",
                         "  run_key: r",
@@ -189,7 +227,7 @@ class ExperimentConfigTest(unittest.TestCase):
             cfg = load_experiment_config(exp_path)
 
         self.assertEqual(cfg.model.key, "m")
-        self.assertEqual(cfg.train.preprocess.image_size, 64)
+        self.assertEqual(cfg.train.preprocess.height, 64)
         self.assertEqual(cfg.train.loader.num_workers, 3)
         self.assertTrue(cfg.train.loader.predecode_images)
         self.assertIn("learning_rate", cfg.search_space.params)
@@ -200,11 +238,11 @@ class ExperimentConfigTest(unittest.TestCase):
                 {
                     "dataset": {"path": "datasets/tiny"},
                     "classes": ["car"],
-                    "preprocess": {"image_size": 32},
                     "model": {
                         "key": "m",
                         "backend": "torchvision",
                         "model_name_or_path": "fasterrcnn_resnet50_fpn",
+                        "preprocess": {"resize_mode": "letterbox", "height": 32, "width": 32},
                     },
                     "train": {
                         "run_key": "r",
@@ -220,11 +258,11 @@ class ExperimentConfigTest(unittest.TestCase):
                 {
                     "dataset": {"path": "datasets/tiny"},
                     "classes": ["car"],
-                    "preprocess": {"image_size": 32},
                     "model": {
                         "key": "m",
                         "backend": "torchvision",
                         "model_name_or_path": "fasterrcnn_resnet50_fpn",
+                        "preprocess": {"resize_mode": "letterbox", "height": 32, "width": 32},
                     },
                     "train": {
                         "run_key": "r",
@@ -240,11 +278,11 @@ class ExperimentConfigTest(unittest.TestCase):
                 {
                     "dataset": {"path": "datasets/tiny"},
                     "classes": ["car"],
-                    "preprocess": {"image_size": 32},
                     "model": {
                         "key": "m",
                         "backend": "torchvision",
                         "model_name_or_path": "fasterrcnn_resnet50_fpn",
+                        "preprocess": {"resize_mode": "letterbox", "height": 32, "width": 32},
                     },
                     "train": {
                         "run_key": "r",
@@ -269,11 +307,11 @@ class ExperimentConfigTest(unittest.TestCase):
                     {
                         "dataset": {"path": "datasets/tiny"},
                         "classes": ["car"],
-                        "preprocess": {"image_size": 32},
                         "model": {
                             "key": "m",
                             "backend": "torchvision",
                             "model_name_or_path": "fasterrcnn_resnet50_fpn",
+                            "preprocess": {"resize_mode": "letterbox", "height": 32, "width": 32},
                         },
                         "train": {
                             "run_key": "r",
@@ -289,11 +327,11 @@ class ExperimentConfigTest(unittest.TestCase):
             {
                 "dataset": {"path": "datasets/tiny"},
                 "classes": ["car"],
-                "preprocess": {"image_size": 32},
                 "model": {
                     "key": "m",
                     "backend": "torchvision",
                     "model_name_or_path": "fasterrcnn_resnet50_fpn",
+                    "preprocess": {"resize_mode": "letterbox", "height": 32, "width": 32},
                 },
                 "train": {"run_key": "r", "output_dir": "runs/r"},
                 "eval": {},
@@ -321,7 +359,6 @@ class ExperimentConfigTest(unittest.TestCase):
         base = {
             "dataset": {"path": "datasets/tiny"},
             "classes": ["car"],
-            "preprocess": {"image_size": 32},
             "train": {"run_key": "r", "output_dir": "runs/r"},
             "eval": {},
         }
@@ -333,6 +370,7 @@ class ExperimentConfigTest(unittest.TestCase):
                         "key": "m",
                         "backend": "torchvision",
                         "model_name_or_path": "fasterrcnn_resnet50_fpn",
+                        "preprocess": {"resize_mode": "letterbox", "height": 32, "width": 32},
                     },
                     "model_file": "m.yaml",
                 }
@@ -346,6 +384,7 @@ class ExperimentConfigTest(unittest.TestCase):
                         "key": "m",
                         "backend": "torchvision",
                         "model_name_or_path": "fasterrcnn_resnet50_fpn",
+                        "preprocess": {"resize_mode": "letterbox", "height": 32, "width": 32},
                     },
                     "preprocess_file": "p.yaml",
                 }
@@ -359,6 +398,7 @@ class ExperimentConfigTest(unittest.TestCase):
                         "key": "m",
                         "backend": "torchvision",
                         "model_name_or_path": "fasterrcnn_resnet50_fpn",
+                        "preprocess": {"resize_mode": "letterbox", "height": 32, "width": 32},
                     },
                     "search_space": {"params": {}},
                     "search_space_file": "s.yaml",

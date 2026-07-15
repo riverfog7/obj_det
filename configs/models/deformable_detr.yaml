@@ -1,4 +1,8 @@
 key: deformable_detr
 backend: hf_trainer
 model_name_or_path: SenseTime/deformable-detr
+preprocess:
+  resize_mode: shortest_edge
+  shortest_edge: 800
+  longest_edge: 1333
 params: {}

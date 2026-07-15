@@ -23,6 +23,7 @@ class _PredictionConfigRecordingAdapter(BaseModelAdapter):
                 key="recording",
                 backend="torchvision",
                 model_name_or_path="unused",
+                preprocess=PreprocessConfig(resize_mode="letterbox", height=32, width=32),
             )
         )
         self.predict_cfg = None
@@ -64,7 +65,7 @@ class EvaluatorTest(unittest.TestCase):
             EvalConfig(
                 classes=["car"],
                 label_mode="meta",
-                preprocess=PreprocessConfig(image_size=32),
+                preprocess=PreprocessConfig(resize_mode="letterbox", height=32, width=32),
                 compute_per_class=True,
                 compute_per_condition=True,
                 compute_per_domain=True,
@@ -98,7 +99,7 @@ class EvaluatorTest(unittest.TestCase):
         result = DetectionEvaluator().evaluate(
             ds,
             predictions,
-            EvalConfig(classes=["car"], label_mode="meta", preprocess=PreprocessConfig(image_size=32)),
+            EvalConfig(classes=["car"], label_mode="meta", preprocess=PreprocessConfig(resize_mode="letterbox", height=32, width=32)),
             model_key="dummy",
         )
 
@@ -130,7 +131,7 @@ class EvaluatorTest(unittest.TestCase):
         result = DetectionEvaluator().evaluate(
             ds,
             predictions,
-            EvalConfig(classes=["car"], preprocess=PreprocessConfig(image_size=32)),
+            EvalConfig(classes=["car"], preprocess=PreprocessConfig(resize_mode="letterbox", height=32, width=32)),
             model_key="dummy",
         )
 
@@ -141,7 +142,7 @@ class EvaluatorTest(unittest.TestCase):
         result = DetectionEvaluator().evaluate(
             ds,
             [],
-            EvalConfig(classes=["car"], label_mode="meta", preprocess=PreprocessConfig(image_size=32)),
+            EvalConfig(classes=["car"], label_mode="meta", preprocess=PreprocessConfig(resize_mode="letterbox", height=32, width=32)),
             model_key="dummy",
         )
 
@@ -187,7 +188,7 @@ class EvaluatorTest(unittest.TestCase):
             )
         ]
         evaluator = DetectionEvaluator()
-        preprocess = PreprocessConfig(image_size=128)
+        preprocess = PreprocessConfig(resize_mode="letterbox", height=128, width=128)
 
         capped_100 = evaluator.evaluate(
             ds,
@@ -224,7 +225,7 @@ class EvaluatorTest(unittest.TestCase):
                 [],
                 EvalConfig(
                     classes=["car"],
-                    preprocess=PreprocessConfig(image_size=32),
+                    preprocess=PreprocessConfig(resize_mode="letterbox", height=32, width=32),
                     primary_metric="missing_metric",
                 ),
                 model_key="dummy",
@@ -246,7 +247,7 @@ class EvaluatorTest(unittest.TestCase):
             artifact,
             EvalConfig(
                 classes=["car"],
-                preprocess=PreprocessConfig(image_size=32),
+                preprocess=PreprocessConfig(resize_mode="letterbox", height=32, width=32),
                 max_detections_per_image=217,
             ),
         )
@@ -269,7 +270,7 @@ class EvaluatorTest(unittest.TestCase):
         result = adapter.evaluate(
             ds,
             artifact,
-            EvalConfig(classes=["car"], preprocess=PreprocessConfig(image_size=32)),
+            EvalConfig(classes=["car"], preprocess=PreprocessConfig(resize_mode="letterbox", height=32, width=32)),
             logger=logger,
             log_prefix="val/epoch",
             log_step=17,
@@ -304,7 +305,7 @@ class EvaluatorTest(unittest.TestCase):
             result = DetectionEvaluator().evaluate(
                 ds,
                 predictions,
-                EvalConfig(classes=["car"], label_mode="meta", preprocess=PreprocessConfig(image_size=32)),
+                EvalConfig(classes=["car"], label_mode="meta", preprocess=PreprocessConfig(resize_mode="letterbox", height=32, width=32)),
                 model_key="dummy",
             )
         finally:

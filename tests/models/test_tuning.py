@@ -26,7 +26,14 @@ from .helpers import row
 
 class DummyAdapter(BaseModelAdapter):
     def __init__(self, *, fail_train_calls: set[int] | None = None):
-        super().__init__(ModelConfig(key="dummy", backend="torchvision", model_name_or_path="x"))
+        super().__init__(
+            ModelConfig(
+                key="dummy",
+                backend="torchvision",
+                model_name_or_path="x",
+                preprocess=PreprocessConfig(resize_mode="letterbox", height=32, width=32),
+            )
+        )
         self.fail_train_calls = set(fail_train_calls or ())
         self.trained = []
         self.train_configs = []
@@ -245,7 +252,7 @@ class TuningTest(unittest.TestCase):
         ds = Dataset.from_list([row()])
         adapter = DummyAdapter(fail_train_calls={0})
         with TemporaryDirectory() as tmp:
-            preprocess = PreprocessConfig(image_size=32)
+            preprocess = PreprocessConfig(resize_mode="letterbox", height=32, width=32)
             result = TuningRunner().optimize(
                 adapter=adapter,
                 train_ds=ds,
@@ -270,7 +277,7 @@ class TuningTest(unittest.TestCase):
         ds = Dataset.from_list([row()])
         adapter = DummyAdapter(fail_train_calls={0})
         with TemporaryDirectory() as tmp:
-            preprocess = PreprocessConfig(image_size=32)
+            preprocess = PreprocessConfig(resize_mode="letterbox", height=32, width=32)
             with self.assertRaises(RuntimeError):
                 TuningRunner().optimize(
                     adapter=adapter,
@@ -291,7 +298,7 @@ class TuningTest(unittest.TestCase):
         ds = Dataset.from_list([row()])
         adapter = DummyAdapter()
         with TemporaryDirectory() as tmp:
-            preprocess = PreprocessConfig(image_size=32)
+            preprocess = PreprocessConfig(resize_mode="letterbox", height=32, width=32)
             result = TuningRunner().optimize(
                 adapter=adapter,
                 train_ds=ds,
@@ -338,7 +345,7 @@ class TuningTest(unittest.TestCase):
         adapter = CheckpointingAdapter()
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
-            preprocess = PreprocessConfig(image_size=32)
+            preprocess = PreprocessConfig(resize_mode="letterbox", height=32, width=32)
             result = TuningRunner().optimize(
                 adapter=adapter,
                 train_ds=ds,
@@ -416,7 +423,7 @@ class TuningTest(unittest.TestCase):
         sys.modules["optuna"] = FakeOptuna([{"learning_rate": 3.0e-4}])
         ds = Dataset.from_list([row()])
         with TemporaryDirectory() as tmp:
-            preprocess = PreprocessConfig(image_size=32)
+            preprocess = PreprocessConfig(resize_mode="letterbox", height=32, width=32)
             with self.assertRaisesRegex(ValueError, "Missing required HPO objective metric 'map_50_95'"):
                 TuningRunner().optimize(
                     adapter=MissingObjectiveAdapter(),
@@ -475,7 +482,7 @@ class TuningTest(unittest.TestCase):
         ds = Dataset.from_list([row()])
         adapter = EvalConfigRecordingAdapter()
         with TemporaryDirectory() as tmp:
-            preprocess = PreprocessConfig(image_size=32)
+            preprocess = PreprocessConfig(resize_mode="letterbox", height=32, width=32)
             TuningRunner().optimize(
                 adapter=adapter,
                 train_ds=ds,
@@ -516,7 +523,7 @@ class TuningTest(unittest.TestCase):
         ds = Dataset.from_list([row()])
         adapter = EvalConfigRecordingAdapter()
         with TemporaryDirectory() as tmp:
-            preprocess = PreprocessConfig(image_size=32)
+            preprocess = PreprocessConfig(resize_mode="letterbox", height=32, width=32)
             TuningRunner().optimize(
                 adapter=adapter,
                 train_ds=ds,
@@ -537,7 +544,7 @@ class TuningTest(unittest.TestCase):
         adapter = DummyAdapter()
         logger_factory = RecordingLoggerFactory()
         with TemporaryDirectory() as tmp:
-            preprocess = PreprocessConfig(image_size=32)
+            preprocess = PreprocessConfig(resize_mode="letterbox", height=32, width=32)
             TuningRunner(logger_factory=logger_factory).optimize(
                 adapter=adapter,
                 train_ds=ds,
@@ -571,7 +578,7 @@ class TuningTest(unittest.TestCase):
         adapter = DummyAdapter(fail_train_calls={0})
         logger_factory = RecordingLoggerFactory()
         with TemporaryDirectory() as tmp:
-            preprocess = PreprocessConfig(image_size=32)
+            preprocess = PreprocessConfig(resize_mode="letterbox", height=32, width=32)
             TuningRunner(logger_factory=logger_factory).optimize(
                 adapter=adapter,
                 train_ds=ds,
@@ -595,7 +602,7 @@ class TuningTest(unittest.TestCase):
         adapter = DummyAdapter()
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
-            preprocess = PreprocessConfig(image_size=32)
+            preprocess = PreprocessConfig(resize_mode="letterbox", height=32, width=32)
             factory = child_logger_factory_from_config(LoggingConfig(backends=["local"]), wandb_group="s")
             TuningRunner(logger_factory=factory).optimize(
                 adapter=adapter,
@@ -619,7 +626,7 @@ class TuningTest(unittest.TestCase):
         ds = Dataset.from_list([row()])
         adapter = DummyAdapter()
         with TemporaryDirectory() as tmp:
-            preprocess = PreprocessConfig(image_size=32)
+            preprocess = PreprocessConfig(resize_mode="letterbox", height=32, width=32)
             runs = run_final_seeds(
                 adapter=adapter,
                 train_ds=ds,
@@ -652,7 +659,7 @@ class TuningTest(unittest.TestCase):
         ds = Dataset.from_list([row()])
         adapter = DummyAdapter()
         with TemporaryDirectory() as tmp:
-            preprocess = PreprocessConfig(image_size=32)
+            preprocess = PreprocessConfig(resize_mode="letterbox", height=32, width=32)
             run_final_seeds(
                 adapter=adapter,
                 train_ds=ds,
@@ -681,7 +688,7 @@ class TuningTest(unittest.TestCase):
         logger_factory = RecordingLoggerFactory()
         with TemporaryDirectory() as tmp:
             output_dir = Path(tmp) / "final"
-            preprocess = PreprocessConfig(image_size=32)
+            preprocess = PreprocessConfig(resize_mode="letterbox", height=32, width=32)
             run_final_seeds(
                 adapter=adapter,
                 train_ds=ds,
@@ -732,7 +739,7 @@ class TuningTest(unittest.TestCase):
         ds = Dataset.from_list([row()])
         adapter = MiddleSeedFailureAdapter()
         with TemporaryDirectory() as tmp:
-            preprocess = PreprocessConfig(image_size=32)
+            preprocess = PreprocessConfig(resize_mode="letterbox", height=32, width=32)
             runs = run_final_seeds(
                 adapter=adapter,
                 train_ds=ds,
@@ -757,7 +764,7 @@ class TuningTest(unittest.TestCase):
     def test_controlled_final_rejects_legacy_provider_learning_rate_name(self):
         ds = Dataset.from_list([row()])
         with TemporaryDirectory() as tmp:
-            preprocess = PreprocessConfig(image_size=32)
+            preprocess = PreprocessConfig(resize_mode="letterbox", height=32, width=32)
             with self.assertRaisesRegex(ValueError, "canonical 'learning_rate'"):
                 run_final_seeds(
                     adapter=DummyAdapter(),
@@ -790,7 +797,7 @@ class TuningTest(unittest.TestCase):
 
         ds = Dataset.from_list([row()])
         with TemporaryDirectory() as tmp:
-            preprocess = PreprocessConfig(image_size=32)
+            preprocess = PreprocessConfig(resize_mode="letterbox", height=32, width=32)
             runs = run_final_seeds(
                 adapter=TestEvalFailureAdapter(),
                 train_ds=ds,

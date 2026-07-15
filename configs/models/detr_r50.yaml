@@ -1,4 +1,8 @@
 key: detr_r50
 backend: hf_trainer
 model_name_or_path: facebook/detr-resnet-50
+preprocess:
+  resize_mode: shortest_edge
+  shortest_edge: 800
+  longest_edge: 1333
 params: {}

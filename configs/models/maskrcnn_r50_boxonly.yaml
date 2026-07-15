@@ -2,4 +2,8 @@ key: maskrcnn_r50_boxonly
 backend: torchvision
 model_name_or_path: maskrcnn_resnet50_fpn
 weights: DEFAULT
+preprocess:
+  resize_mode: shortest_edge
+  shortest_edge: 800
+  longest_edge: 1333
 params: {}

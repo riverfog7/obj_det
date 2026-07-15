@@ -9,7 +9,7 @@ from datasets import Dataset
 
 from obj_det.models.adapters.base import BaseModelAdapter
 from obj_det.models.data.hf_dataset import HFTrainerDetectionDataset
-from obj_det.models.data.hf_targets import make_hf_detection_collate
+from obj_det.models.data.hf_targets import make_hf_detection_collate, validate_hf_processor_size
 from obj_det.models.data.row_parser import HFDetectionRowParser
 from obj_det.models.data.row_batches import iter_hf_row_batches
 from obj_det.models.data.sample_source import DetectionSampleSource
@@ -44,6 +44,7 @@ class HFTrainerDetectionAdapter(BaseModelAdapter):
         log_prefix: str = "train",
     ) -> ModelArtifact:
         require_single_process(context="Controlled HF Trainer training")
+        self._require_model_preprocess(train_cfg.preprocess)
         try:
             from transformers import AutoImageProcessor, AutoModelForObjectDetection, Trainer, TrainerCallback, TrainingArguments
         except ImportError as exc:
@@ -56,6 +57,7 @@ class HFTrainerDetectionAdapter(BaseModelAdapter):
             str(self.cfg.model_name_or_path),
             **self.cfg.params.get("processor_from_pretrained_kwargs", {}),
         )
+        validate_hf_processor_size(processor, train_cfg.preprocess)
         id2label, label2id = self._label_maps(train_cfg.classes)
         model = AutoModelForObjectDetection.from_pretrained(
             str(self.cfg.weights or self.cfg.model_name_or_path),
@@ -254,8 +256,10 @@ class HFTrainerDetectionAdapter(BaseModelAdapter):
         except ImportError as exc:
             raise ImportError("Install the models extra to use backend='hf_trainer'.") from exc
 
+        self._require_model_preprocess(predict_cfg.preprocess)
         checkpoint = artifact.checkpoint_path or artifact.artifact_path or Path(str(self.cfg.model_name_or_path))
         processor = AutoImageProcessor.from_pretrained(str(checkpoint))
+        validate_hf_processor_size(processor, predict_cfg.preprocess)
         model = AutoModelForObjectDetection.from_pretrained(str(checkpoint))
         device = torch.device(predict_cfg.backend_params.get("device") or ("cuda" if torch.cuda.is_available() else "cpu"))
         model.to(device)

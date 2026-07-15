@@ -10,7 +10,6 @@ from obj_det.models.experiment import (
     _read_yaml_mapping,
     load_augmentation_config,
     load_model_config,
-    load_preprocess_config,
     load_search_space,
 )
 from obj_det.models.runner import ExperimentRunner
@@ -59,7 +58,6 @@ def expand_experiment_plan(
     class_space = _load_class_space(_resolve(base_dir, plan.class_space_file))
     recipe_path = _resolve(base_dir, plan.recipe_file)
     recipe = _load_recipe(recipe_path)
-    preprocess = load_preprocess_config(_resolve(recipe_path.parent, recipe.preprocess_file))
     augmentation = None
     if recipe.augmentation_file is not None:
         augmentation = load_augmentation_config(_resolve(recipe_path.parent, recipe.augmentation_file))
@@ -94,7 +92,6 @@ def expand_experiment_plan(
             class_space=class_space,
             recipe=recipe,
             model=model.model_dump(mode="json"),
-            preprocess=preprocess.model_dump(mode="json"),
             augmentation=augmentation.model_dump(mode="json") if augmentation is not None else None,
             search_space=(
                 recipe_search_space.model_dump(mode="json") if recipe_search_space is not None else None
@@ -188,7 +185,6 @@ def _base_experiment_dict(
     class_space: ClassSpaceConfig,
     recipe: RecipeConfig,
     model: dict[str, Any],
-    preprocess: dict[str, Any],
     augmentation: dict[str, Any] | None,
     search_space: dict[str, Any] | None,
 ) -> dict[str, Any]:
@@ -201,7 +197,6 @@ def _base_experiment_dict(
         },
         "classes": class_space.classes,
         "model": model,
-        "preprocess": preprocess,
         "train": deepcopy(recipe.train),
         "eval": deepcopy(recipe.eval),
         "predict": deepcopy(recipe.predict),

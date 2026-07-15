@@ -36,6 +36,33 @@ EXPECTED_MODEL_KEYS = {
     "maskrcnn_r50_boxonly",
 }
 
+EXPECTED_PREPROCESS = {
+    **{
+        key: ("letterbox", 640, 640, None, None)
+        for key in {
+            "yolo26n", "yolo26s", "yolo26m",
+            "yolo11n", "yolo11s", "yolo11m",
+            "yolov8n", "yolov8s", "yolov8m",
+        }
+    },
+    **{
+        key: ("exact", 640, 640, None, None)
+        for key in {"rtdetr_r50vd", "dfine_nano", "dfine_small"}
+    },
+    "rfdetr_nano": ("exact", 384, 384, None, None),
+    "rfdetr_small": ("exact", 512, 512, None, None),
+    "rfdetr_base": ("exact", 560, 560, None, None),
+    "rfdetr_medium": ("exact", 576, 576, None, None),
+    "yolos_tiny": ("shortest_edge", None, None, 512, 1333),
+    **{
+        key: ("shortest_edge", None, None, 800, 1333)
+        for key in {
+            "detr_r50", "conditional_detr_r50", "deformable_detr", "yolos_small",
+            "fasterrcnn_r50", "retinanet_r50", "fcos_r50", "maskrcnn_r50_boxonly",
+        }
+    },
+}
+
 
 class ModelConfigMatrixTest(unittest.TestCase):
     def test_expected_model_configs_exist_and_load(self):
@@ -50,6 +77,17 @@ class ModelConfigMatrixTest(unittest.TestCase):
                 self.assertIn(cfg.backend, MODEL_BACKENDS)
                 if cfg.backend == "torchvision":
                     self.assertEqual(cfg.weights, "DEFAULT")
+                preprocess = cfg.preprocess
+                self.assertEqual(
+                    (
+                        preprocess.resize_mode,
+                        preprocess.height,
+                        preprocess.width,
+                        preprocess.shortest_edge,
+                        preprocess.longest_edge,
+                    ),
+                    EXPECTED_PREPROCESS[key],
+                )
                 self.assertEqual(model_adapter_from_config(cfg).key, key)
 
     def test_debug_experiment_config_loads(self):
@@ -88,18 +126,17 @@ class ModelConfigMatrixTest(unittest.TestCase):
             if cfg.backend != "torchvision":
                 continue
             with self.subTest(key=cfg.key):
-                cfg = cfg.model_copy(update={"params": {**cfg.params, "min_size": 64, "max_size": 64}}, deep=True)
                 adapter = TorchvisionDetectionAdapter(cfg)
-                model = adapter._build_model(num_classes=7, image_size=32)
+                model = adapter._build_model(num_classes=7, preprocess=cfg.preprocess)
                 self.assertIsNotNone(model)
 
-    def test_torchvision_model_builder_defaults_to_preprocess_image_size(self):
+    def test_torchvision_model_builder_uses_native_preprocess_size(self):
         cfg = load_model_config(Path("configs/models/fasterrcnn_r50.yaml"))
         adapter = TorchvisionDetectionAdapter(cfg)
-        model = adapter._build_model(num_classes=7, image_size=640)
+        model = adapter._build_model(num_classes=7, preprocess=cfg.preprocess)
 
-        self.assertEqual(model.transform.min_size, (640,))
-        self.assertEqual(model.transform.max_size, 640)
+        self.assertEqual(model.transform.min_size, (800,))
+        self.assertEqual(model.transform.max_size, 1333)
 
 
 if __name__ == "__main__":

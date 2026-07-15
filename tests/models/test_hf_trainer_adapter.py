@@ -14,6 +14,7 @@ class HFTrainerAdapterTest(unittest.TestCase):
                 key="hf",
                 backend="hf_trainer",
                 model_name_or_path="dummy/model",
+                preprocess=PreprocessConfig(resize_mode="letterbox", height=32, width=32),
             )
         )
 
@@ -22,7 +23,7 @@ class HFTrainerAdapterTest(unittest.TestCase):
             run_key="r",
             classes=["car"],
             output_dir=Path("runs/test"),
-            preprocess=PreprocessConfig(image_size=32),
+            preprocess=PreprocessConfig(resize_mode="letterbox", height=32, width=32),
             hparams={"learning_rate": 3.0e-4},
         )
 

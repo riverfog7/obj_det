@@ -43,11 +43,12 @@ class BackendSmokeTest(unittest.TestCase):
     def test_hf_trainer_smoke(self):
         ds = tiny_dataset()
         with TemporaryDirectory() as tmp:
-            preprocess = PreprocessConfig(image_size=64)
+            preprocess = PreprocessConfig(resize_mode="letterbox", height=64, width=64)
             adapter = model_adapter_from_config(ModelConfig(
                 key="tiny_detr",
                 backend="hf_trainer",
                 model_name_or_path="hf-internal-testing/tiny-random-detr",
+                preprocess=preprocess,
             ))
             artifact = adapter.train(ds, ds, TrainConfig(
                 run_key="hf_smoke",
@@ -71,11 +72,12 @@ class BackendSmokeTest(unittest.TestCase):
     def test_ultralytics_smoke(self):
         ds = tiny_dataset(size=(96, 96))
         with TemporaryDirectory() as tmp, working_directory(Path(tmp)):
-            preprocess = PreprocessConfig(image_size=96)
+            preprocess = PreprocessConfig(resize_mode="letterbox", height=96, width=96)
             adapter = model_adapter_from_config(ModelConfig(
                 key="yolo_smoke",
                 backend="ultralytics",
                 model_name_or_path=os.environ.get("OBJ_DET_YOLO_SMOKE_MODEL", "yolo11n.pt"),
+                preprocess=preprocess,
             ))
             artifact = adapter.train(ds, ds, TrainConfig(
                 run_key="yolo_smoke",
@@ -104,12 +106,15 @@ class BackendSmokeTest(unittest.TestCase):
     def test_torchvision_smoke(self):
         ds = tiny_dataset()
         with TemporaryDirectory() as tmp:
-            preprocess = PreprocessConfig(image_size=64)
+            preprocess = PreprocessConfig(
+                resize_mode="shortest_edge", shortest_edge=64, longest_edge=64
+            )
             adapter = model_adapter_from_config(ModelConfig(
                 key="torchvision_smoke",
                 backend="torchvision",
                 model_name_or_path="fasterrcnn_resnet50_fpn",
-                params={"weights": None, "min_size": 64, "max_size": 64},
+                preprocess=preprocess,
+                params={"weights": None},
             ))
             artifact = adapter.train(ds, ds, TrainConfig(
                 run_key="torchvision_smoke",

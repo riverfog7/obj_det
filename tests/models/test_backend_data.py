@@ -11,7 +11,11 @@ from obj_det.models.data.hf_dataset import HFTrainerDetectionDataset
 from obj_det.models.data.sample import DetectionBatch
 from obj_det.models.data.loader import dataloader_kwargs
 from obj_det.models.data.profiling import measure_dataloader, measure_decode_backend, measure_transform
-from obj_det.models.data.hf_targets import make_hf_detection_collate, sample_to_coco_annotation
+from obj_det.models.data.hf_targets import (
+    make_hf_detection_collate,
+    sample_to_coco_annotation,
+    validate_hf_processor_size,
+)
 from obj_det.models.data.row_batches import iter_hf_row_batches
 from obj_det.models.data.row_parser import HFDetectionRowParser
 from obj_det.models.data.sample_source import DetectionSampleSource
@@ -23,6 +27,20 @@ from .helpers import row
 
 
 class BackendDataTest(unittest.TestCase):
+    def test_hf_processor_size_must_match_model_preprocess(self):
+        class Processor:
+            size = {"height": 640, "width": 640}
+
+        validate_hf_processor_size(
+            Processor(),
+            PreprocessConfig(resize_mode="exact", height=640, width=640),
+        )
+        with self.assertRaisesRegex(ValueError, "does not match"):
+            validate_hf_processor_size(
+                Processor(),
+                PreprocessConfig(resize_mode="exact", height=560, width=560),
+            )
+
     def test_hf_coco_annotation_uses_contiguous_label_ids(self):
         sample = HFDetectionRowParser(["car"], "meta").parse(row())
         ann = sample_to_coco_annotation(sample, image_id=7)
@@ -42,7 +60,7 @@ class BackendDataTest(unittest.TestCase):
         ds = Dataset.from_list([row(), row(image_id="img2")])
         parser = HFDetectionRowParser(["car"], "meta")
         source = DetectionSampleSource(ds, parser)
-        transform = DetectionTransform(PreprocessConfig(image_size=64))
+        transform = DetectionTransform(PreprocessConfig(resize_mode="letterbox", height=64, width=64))
         dataset = HFUltralyticsDetectionDataset(source, transform)
         item = dataset[0]
         batch = ultralytics_detection_collate([dataset[0], dataset[1]])
@@ -59,7 +77,7 @@ class BackendDataTest(unittest.TestCase):
         ds = Dataset.from_list([row(objects=[]), row(image_id="img2")])
         parser = HFDetectionRowParser(["car"], "meta")
         source = DetectionSampleSource(ds, parser)
-        transform = DetectionTransform(PreprocessConfig(image_size=64))
+        transform = DetectionTransform(PreprocessConfig(resize_mode="letterbox", height=64, width=64))
         dataset = HFUltralyticsDetectionDataset(source, transform)
         empty_item = dataset[0]
         batch = ultralytics_detection_collate([empty_item, dataset[1]])
@@ -74,7 +92,7 @@ class BackendDataTest(unittest.TestCase):
         ds = Dataset.from_list([row()])
         parser = HFDetectionRowParser(["car"], "meta")
         source = DetectionSampleSource(ds, parser)
-        transform = DetectionTransform(PreprocessConfig(image_size=64))
+        transform = DetectionTransform(PreprocessConfig(resize_mode="letterbox", height=64, width=64))
         dataset = HFUltralyticsDetectionDataset(source, transform)
 
         self.assertIsNone(DataLoaderConfig().profile_every_n)
@@ -84,7 +102,7 @@ class BackendDataTest(unittest.TestCase):
         ds = Dataset.from_list([row(), row(image_id="img2")])
         parser = HFDetectionRowParser(["car"], "meta")
         source = DetectionSampleSource(ds, parser)
-        transform = DetectionTransform(PreprocessConfig(image_size=64))
+        transform = DetectionTransform(PreprocessConfig(resize_mode="letterbox", height=64, width=64))
         dataset = HFUltralyticsDetectionDataset(source, transform, include_samples=True)
         batch = ultralytics_detection_collate([dataset[0], dataset[1]])
 
@@ -124,7 +142,7 @@ class BackendDataTest(unittest.TestCase):
         ds = Dataset.from_list([row(), row(image_id="img2")])
         parser = HFDetectionRowParser(["car"], "meta")
         source = DetectionSampleSource(ds, parser)
-        transform = DetectionTransform(PreprocessConfig(image_size=64))
+        transform = DetectionTransform(PreprocessConfig(resize_mode="letterbox", height=64, width=64))
         dataset = HFTrainerDetectionDataset(source, transform)
         processor = FakeProcessor()
         collate = make_hf_detection_collate(processor)
@@ -188,7 +206,7 @@ class BackendDataTest(unittest.TestCase):
 
     def test_transform_profiling_helper_returns_rate(self):
         parser = HFDetectionRowParser(["car"], "meta")
-        transform = DetectionTransform(PreprocessConfig(image_size=64))
+        transform = DetectionTransform(PreprocessConfig(resize_mode="letterbox", height=64, width=64))
         samples = [parser.parse(row()), parser.parse(row(image_id="img2"))]
 
         stats = measure_transform(samples, transform, max_samples=2)
@@ -200,7 +218,7 @@ class BackendDataTest(unittest.TestCase):
         ds = Dataset.from_list([row(), row(image_id="img2")])
         parser = HFDetectionRowParser(["car"], "meta")
         source = DetectionSampleSource(ds, parser)
-        transform = DetectionTransform(PreprocessConfig(image_size=64))
+        transform = DetectionTransform(PreprocessConfig(resize_mode="letterbox", height=64, width=64))
         dataset = _TorchvisionTrainerDataset(source, transform)
         item = dataset[0]
         batch = _torchvision_collate([dataset[0], dataset[1]])

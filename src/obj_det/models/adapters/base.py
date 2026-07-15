@@ -20,6 +20,12 @@ class BaseModelAdapter(ABC):
         self.key = cfg.key
         self.backend = cfg.backend
 
+    def _require_model_preprocess(self, preprocess) -> None:
+        if preprocess != self.cfg.preprocess:
+            raise ValueError(
+                f"Runtime preprocessing for {self.key!r} must match its model configuration"
+            )
+
     @abstractmethod
     def train(
         self,
@@ -54,6 +60,7 @@ class BaseModelAdapter(ABC):
     ) -> EvalResult:
         from obj_det.models.evaluation.evaluator import DetectionEvaluator
 
+        self._require_model_preprocess(eval_cfg.preprocess)
         predict_cfg = PredictConfig(
             classes=eval_cfg.classes,
             label_mode=eval_cfg.label_mode,

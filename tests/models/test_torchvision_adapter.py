@@ -24,6 +24,9 @@ class TorchvisionAdapterTest(unittest.TestCase):
                 key="tv",
                 backend="torchvision",
                 model_name_or_path=model_name,
+                preprocess=PreprocessConfig(
+                    resize_mode="shortest_edge", shortest_edge=800, longest_edge=1333
+                ),
                 weights=weights,
                 params=params or {},
             )
@@ -74,7 +77,7 @@ class TorchvisionAdapterTest(unittest.TestCase):
     def test_predict_config_updates_internal_thresholds_for_all_models(self):
         cfg = PredictConfig(
             classes=["car"],
-            preprocess=PreprocessConfig(image_size=32),
+            preprocess=PreprocessConfig(resize_mode="letterbox", height=32, width=32),
             conf_threshold=0.25,
             iou_threshold=0.45,
             backend_params={"max_detections_per_image": 300},
@@ -148,7 +151,7 @@ class TorchvisionAdapterTest(unittest.TestCase):
             run_key="r",
             classes=["car"],
             output_dir=Path("runs/test"),
-            preprocess=PreprocessConfig(image_size=32),
+            preprocess=PreprocessConfig(resize_mode="letterbox", height=32, width=32),
             hparams={"learning_rate": 3.0e-4},
             optimizer={
                 "weight_decay": 2.0e-4,
@@ -174,7 +177,7 @@ class TorchvisionAdapterTest(unittest.TestCase):
             run_key="r",
             classes=["car"],
             output_dir=Path("runs/test"),
-            preprocess=PreprocessConfig(image_size=32),
+            preprocess=PreprocessConfig(resize_mode="letterbox", height=32, width=32),
             hparams={"learning_rate": 1.0e-3},
             scheduler={
                 "warmup_epochs": 1,

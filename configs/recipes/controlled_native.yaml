@@ -1,6 +1,5 @@
 protocol: controlled
 
-preprocess_file: ../preprocess/640.yaml
 augmentation_file: ../augmentations/basic_light.yaml
 search_space_file: ../search_spaces/global_learning_rate.yaml
 

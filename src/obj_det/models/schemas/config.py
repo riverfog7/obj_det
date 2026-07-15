@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 
 from .base import ModelSchema
 
@@ -22,10 +22,41 @@ def validate_class_list(value: list[str]) -> list[str]:
     return cleaned
 
 
+class PreprocessConfig(ModelSchema):
+    resize_mode: Literal["letterbox", "exact", "shortest_edge"]
+    height: int | None = Field(default=None, gt=0)
+    width: int | None = Field(default=None, gt=0)
+    shortest_edge: int | None = Field(default=None, gt=0)
+    longest_edge: int | None = Field(default=None, gt=0)
+
+    @model_validator(mode="after")
+    def validate_dimensions(self) -> "PreprocessConfig":
+        fixed_size = self.height is not None or self.width is not None
+        edge_size = self.shortest_edge is not None or self.longest_edge is not None
+
+        if self.resize_mode in {"letterbox", "exact"}:
+            if self.height is None or self.width is None or edge_size:
+                raise ValueError(
+                    f"{self.resize_mode} preprocessing requires only height and width"
+                )
+            if self.resize_mode == "letterbox" and self.height != self.width:
+                raise ValueError("letterbox preprocessing requires equal height and width")
+            return self
+
+        if fixed_size or self.shortest_edge is None or self.longest_edge is None:
+            raise ValueError(
+                "shortest_edge preprocessing requires only shortest_edge and longest_edge"
+            )
+        if self.longest_edge < self.shortest_edge:
+            raise ValueError("longest_edge must be greater than or equal to shortest_edge")
+        return self
+
+
 class ModelConfig(ModelSchema):
     key: str
     backend: BackendName
     model_name_or_path: str | Path
+    preprocess: PreprocessConfig
     weights: str | Path | None = None
     params: dict[str, Any] = Field(default_factory=dict)
 
@@ -36,12 +67,6 @@ class ModelConfig(ModelSchema):
         if not value:
             raise ValueError("model key cannot be empty")
         return value
-
-
-class PreprocessConfig(ModelSchema):
-    image_size: int = Field(gt=0)
-
-
 class AugmentationConfig(ModelSchema):
     policy: Literal["none", "basic", "weather", "provider"] = "none"
     horizontal_flip_p: float = Field(default=0.0, ge=0.0, le=1.0)

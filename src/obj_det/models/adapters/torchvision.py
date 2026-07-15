@@ -31,7 +31,7 @@ from obj_det.models.data.transforms import canonicalize_prediction_bbox, build_d
 from obj_det.models.logging.base import BaseExperimentLogger
 from obj_det.models.logging.trainer_callback import make_transformers_logging_callback
 from obj_det.models.schemas.artifact import ModelArtifact
-from obj_det.models.schemas.config import EvalConfig, PredictConfig, TrainConfig
+from obj_det.models.schemas.config import EvalConfig, PredictConfig, PreprocessConfig, TrainConfig
 from obj_det.models.schemas.prediction import PredictionObject, PredictionRecord
 from obj_det.models.training import (
     CheckpointState,
@@ -111,6 +111,7 @@ class TorchvisionDetectionAdapter(BaseModelAdapter):
         log_prefix: str = "train",
     ) -> ModelArtifact:
         require_single_process(context="Controlled TorchVision training")
+        self._require_model_preprocess(train_cfg.preprocess)
         set_seed(train_cfg.seed)
         train_cfg.output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -120,7 +121,7 @@ class TorchvisionDetectionAdapter(BaseModelAdapter):
         model = self._build_model(
             spec=spec,
             num_classes=spec.model_num_classes(len(train_cfg.classes)),
-            image_size=train_cfg.preprocess.image_size,
+            preprocess=train_cfg.preprocess,
             weights=weights,
         )
         parser = HFDetectionRowParser(classes=train_cfg.classes, label_mode=train_cfg.label_mode, decode_backend=train_cfg.loader.decode_backend)
@@ -273,12 +274,13 @@ class TorchvisionDetectionAdapter(BaseModelAdapter):
         if artifact.checkpoint_path is None:
             raise ValueError("Torchvision artifact is missing checkpoint_path")
 
+        self._require_model_preprocess(predict_cfg.preprocess)
         device = self._device(predict_cfg.backend_params)
         spec = self._model_spec()
         model = self._build_model(
             spec=spec,
             num_classes=spec.model_num_classes(len(predict_cfg.classes)),
-            image_size=predict_cfg.preprocess.image_size,
+            preprocess=predict_cfg.preprocess,
             weights=None,
             predict_cfg=predict_cfg,
         ).to(device)
@@ -352,20 +354,20 @@ class TorchvisionDetectionAdapter(BaseModelAdapter):
         self,
         *,
         num_classes: int,
-        image_size: int,
+        preprocess: PreprocessConfig,
         spec: _TorchvisionModelSpec | None = None,
         weights=None,
         predict_cfg: PredictConfig | None = None,
     ):
         spec = spec or self._model_spec()
-        min_size = int(self.cfg.params.get("min_size", image_size))
-        max_size = int(self.cfg.params.get("max_size", image_size))
+        if preprocess.resize_mode != "shortest_edge":
+            raise ValueError("TorchVision models require shortest_edge preprocessing")
 
         model = spec.builder(
             weights=weights,
             weights_backbone=None,
-            min_size=min_size,
-            max_size=max_size,
+            min_size=preprocess.shortest_edge,
+            max_size=preprocess.longest_edge,
         )
         if spec.head_kind == "roi":
             self._replace_roi_box_predictor(model, num_classes)

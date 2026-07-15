@@ -2,7 +2,7 @@ key: carpk_controlled
 
 dataset_file: ../dataset_refs/carpk.yaml
 class_space_file: ../class_spaces/traffic6.yaml
-recipe_file: ../recipes/controlled_640.yaml
+recipe_file: ../recipes/controlled_native.yaml
 model_group_file: ../model_groups/detection_main.yaml
 
 run_template:

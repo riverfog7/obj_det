@@ -1,4 +1,8 @@
 key: dfine_small
 backend: hf_trainer
 model_name_or_path: ustc-community/dfine-small-coco
+preprocess:
+  resize_mode: exact
+  height: 640
+  width: 640
 params: {}

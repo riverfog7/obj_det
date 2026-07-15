@@ -40,11 +40,11 @@ class CliTest(unittest.TestCase):
             {
                 "dataset": {"path": "datasets/tiny"},
                 "classes": ["car"],
-                "preprocess": {"image_size": 32},
                 "model": {
                     "key": "m",
                     "backend": "torchvision",
                     "model_name_or_path": "fasterrcnn_resnet50_fpn",
+                    "preprocess": {"resize_mode": "letterbox", "height": 32, "width": 32},
                 },
                 "train": {"run_key": "r", "output_dir": "runs/r"},
                 "eval": {},
@@ -82,11 +82,11 @@ class CliTest(unittest.TestCase):
             {
                 "dataset": {"path": "datasets/tiny"},
                 "classes": ["car"],
-                "preprocess": {"image_size": 32},
                 "model": {
                     "key": "m",
                     "backend": "torchvision",
                     "model_name_or_path": "fasterrcnn_resnet50_fpn",
+                    "preprocess": {"resize_mode": "letterbox", "height": 32, "width": 32},
                 },
                 "train": {"run_key": "r", "output_dir": "runs/r"},
                 "eval": {},
@@ -100,11 +100,11 @@ class CliTest(unittest.TestCase):
             {
                 "dataset": {"path": "datasets/tiny"},
                 "classes": ["car"],
-                "preprocess": {"image_size": 32},
                 "model": {
                     "key": "m",
                     "backend": "torchvision",
                     "model_name_or_path": "fasterrcnn_resnet50_fpn",
+                    "preprocess": {"resize_mode": "letterbox", "height": 32, "width": 32},
                 },
                 "train": {"run_key": "r", "output_dir": "runs/r", "batch_size": 8},
                 "eval": {},
@@ -125,11 +125,11 @@ class CliTest(unittest.TestCase):
             {
                 "dataset": {"path": "datasets/tiny"},
                 "classes": ["car"],
-                "preprocess": {"image_size": 32},
                 "model": {
                     "key": "m",
                     "backend": "torchvision",
                     "model_name_or_path": "fasterrcnn_resnet50_fpn",
+                    "preprocess": {"resize_mode": "letterbox", "height": 32, "width": 32},
                 },
                 "train": {"run_key": "r", "output_dir": "runs/r"},
                 "eval": {},
@@ -173,12 +173,14 @@ class CliTest(unittest.TestCase):
                         "dataset:",
                         "  path: datasets/tiny",
                         "classes: [car]",
-                        "preprocess:",
-                        "  image_size: 32",
                         "model:",
                         "  key: m",
                         "  backend: torchvision",
                         "  model_name_or_path: fasterrcnn_resnet50_fpn",
+                        "  preprocess:",
+                        "    resize_mode: letterbox",
+                        "    height: 32",
+                        "    width: 32",
                         "train:",
                         "  run_key: r",
                         f"  output_dir: {root / 'run'}",

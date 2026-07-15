@@ -27,22 +27,25 @@ class ImportTest(unittest.TestCase):
             key="fasterrcnn",
             backend="torchvision",
             model_name_or_path="fasterrcnn_resnet50_fpn",
+            preprocess=PreprocessConfig(
+                resize_mode="shortest_edge", shortest_edge=800, longest_edge=1333
+            ),
         )
         exp = ExperimentConfig.model_validate({
             "dataset": {"path": "/tmp/ds"},
             "classes": ["car"],
-            "preprocess": {"image_size": 32},
             "model": {
                 "key": "m",
                 "backend": "torchvision",
                 "model_name_or_path": "fasterrcnn_resnet50_fpn",
+                "preprocess": {"resize_mode": "letterbox", "height": 32, "width": 32},
             },
             "train": {"run_key": "r", "output_dir": "/tmp/r"},
             "eval": {},
         })
         self.assertIs(ExperimentRunner(exp).exp, exp)
         adapter = model_adapter_from_config(cfg)
-        preprocess = PreprocessConfig(image_size=32)
+        preprocess = PreprocessConfig(resize_mode="letterbox", height=32, width=32)
         self.assertEqual(adapter.key, "fasterrcnn")
         eval_cfg = EvalConfig(classes=["car"], preprocess=preprocess)
         self.assertEqual(eval_cfg.classes, ["car"])
@@ -61,11 +64,11 @@ class ImportTest(unittest.TestCase):
             ExperimentConfig.model_validate({
                 "dataset": {"path": "/tmp/ds"},
                 "classes": ["car"],
-                "preprocess": {"image_size": 32},
                 "model": {
                     "key": "m",
                     "backend": "torchvision",
                     "model_name_or_path": "fasterrcnn_resnet50_fpn",
+                    "preprocess": {"resize_mode": "letterbox", "height": 32, "width": 32},
                 },
                 "train": {"run_key": "r", "output_dir": "/tmp/r"},
                 "eval": {},

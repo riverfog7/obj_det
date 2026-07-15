@@ -72,6 +72,8 @@ class UltralyticsDetectionAdapter(BaseModelAdapter):
             raise ImportError("Install the models extra to use backend='ultralytics'.") from exc
 
         self._validate_single_process_device(train_cfg)
+        self._require_model_preprocess(train_cfg.preprocess)
+        self._require_letterbox(train_cfg.preprocess)
 
         if train_cfg.eval_strategy.enabled and epoch_eval_cfg is None:
             warnings.warn(
@@ -148,6 +150,8 @@ class UltralyticsDetectionAdapter(BaseModelAdapter):
         except ImportError as exc:
             raise ImportError("Install the models extra to use backend='ultralytics'.") from exc
 
+        self._require_model_preprocess(predict_cfg.preprocess)
+        self._require_letterbox(predict_cfg.preprocess)
         checkpoint = artifact.checkpoint_path or artifact.artifact_path or Path(str(self.cfg.model_name_or_path))
         model = YOLO(str(checkpoint))
         device = predict_cfg.backend_params.get("device")
@@ -163,7 +167,7 @@ class UltralyticsDetectionAdapter(BaseModelAdapter):
             samples = [transform(sample) for sample in originals]
             results = model.predict(
                 source=[sample.image for sample in samples],
-                imgsz=predict_cfg.preprocess.image_size,
+                imgsz=predict_cfg.preprocess.height,
                 conf=predict_cfg.conf_threshold,
                 iou=predict_cfg.iou_threshold,
                 max_det=predict_cfg.max_detections_per_image,
@@ -223,7 +227,7 @@ class UltralyticsDetectionAdapter(BaseModelAdapter):
             "name": train_cfg.output_dir.name,
             "exist_ok": True,
             "epochs": int(train_cfg.scheduler.total_epochs),
-            "imgsz": int(train_cfg.preprocess.image_size),
+            "imgsz": int(train_cfg.preprocess.height),
             "batch": int(train_cfg.batch_size),
             "seed": int(train_cfg.seed),
             "amp": bool(train_cfg.amp),
@@ -264,6 +268,10 @@ class UltralyticsDetectionAdapter(BaseModelAdapter):
         )
         overrides.update(_CONTROLLED_AUG_OFF)
         return overrides
+
+    def _require_letterbox(self, preprocess) -> None:
+        if preprocess.resize_mode != "letterbox":
+            raise ValueError("Ultralytics models require letterbox preprocessing")
 
     def _validate_single_process_device(self, train_cfg: TrainConfig) -> None:
         device = train_cfg.backend_params.get("device")

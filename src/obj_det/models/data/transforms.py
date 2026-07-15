@@ -24,19 +24,23 @@ class DetectionTransform:
     ):
         self.preprocess = preprocess
         self.augmentation = augmentation or AugmentationConfig()
-        self.transform = A.Compose(
-            self._transforms(preprocess, self.augmentation),
-            bbox_params=A.BboxParams(
-                format="coco",
-                label_fields=["target_indices"],
-                clip=True,
-                filter_invalid_bboxes=True,
-            ),
-            seed=seed,
-        )
+        augmentations = self._augmentations(self.augmentation)
+        self.transform = None
+        if augmentations:
+            self.transform = A.Compose(
+                augmentations,
+                bbox_params=A.BboxParams(
+                    format="coco",
+                    label_fields=["target_indices"],
+                    clip=True,
+                    filter_invalid_bboxes=True,
+                ),
+                seed=seed,
+            )
 
     def set_seed(self, seed: int) -> None:
-        self.transform.set_random_seed(seed)
+        if self.transform is not None:
+            self.transform.set_random_seed(seed)
 
     def __call__(self, sample: DetectionSample) -> DetectionSample:
         if sample.image is None:
@@ -44,17 +48,25 @@ class DetectionTransform:
 
         original_width = sample.width
         original_height = sample.height
-        result = self.transform(
-            image=np.ascontiguousarray(sample.image),
-            bboxes=[target.bbox_xywh for target in sample.targets],
-            target_indices=list(range(len(sample.targets))),
-        )
+        result = {
+            "image": np.ascontiguousarray(sample.image),
+            "bboxes": [target.bbox_xywh for target in sample.targets],
+            "target_indices": list(range(len(sample.targets))),
+        }
+        if self.transform is not None:
+            result = self.transform(**result)
 
-        image = np.asarray(result["image"], dtype=np.uint8)
+        image, resized_boxes, preprocess_meta = _resize_geometry(
+            np.asarray(result["image"], dtype=np.uint8),
+            result["bboxes"],
+            self.preprocess,
+            original_width=original_width,
+            original_height=original_height,
+        )
         height, width = image.shape[:2]
         targets: list[DetectionTarget] = []
 
-        for bbox_values, target_index in zip(result["bboxes"], result["target_indices"]):
+        for bbox_values, target_index in zip(resized_boxes, result["target_indices"]):
             try:
                 bbox = clip_xywh(bbox_xywh(bbox_values), width, height)
             except ValueError:
@@ -64,11 +76,11 @@ class DetectionTransform:
             targets.append(replace(sample.targets[int(round(float(target_index)))], bbox_xywh=bbox))
 
         meta = dict(sample.meta)
-        meta["preprocess"] = _preprocess_meta(original_width, original_height, self.preprocess.image_size)
+        meta["preprocess"] = preprocess_meta
 
         return replace(sample, image=image, width=width, height=height, targets=targets, meta=meta)
 
-    def _transforms(self, preprocess: PreprocessConfig, augmentation: AugmentationConfig) -> list[Any]:
+    def _augmentations(self, augmentation: AugmentationConfig) -> list[Any]:
         transforms: list[Any] = []
         if augmentation.policy in {"basic", "weather"} and augmentation.horizontal_flip_p > 0:
             transforms.append(A.HorizontalFlip(p=augmentation.horizontal_flip_p))
@@ -87,19 +99,6 @@ class DetectionTransform:
                     p=augmentation.color_jitter_p,
                 )
             )
-        transforms.extend(
-            [
-                A.LongestMaxSize(max_size=preprocess.image_size, interpolation=cv2.INTER_LINEAR, p=1.0),
-                A.PadIfNeeded(
-                    min_height=preprocess.image_size,
-                    min_width=preprocess.image_size,
-                    position="center",
-                    border_mode=cv2.BORDER_CONSTANT,
-                    fill=(0, 0, 0),
-                    p=1.0,
-                ),
-            ]
-        )
         return transforms
 
 
@@ -112,24 +111,86 @@ def build_detection_transform(
     return DetectionTransform(preprocess, augmentation, seed=seed)
 
 
-def _preprocess_meta(original_width: int, original_height: int, image_size: int) -> dict[str, Any]:
-    scale = image_size / max(original_width, original_height)
-    resized_width = max(1, int(round(original_width * scale)))
-    resized_height = max(1, int(round(original_height * scale)))
-    pad_left = (image_size - resized_width) // 2
-    pad_top = (image_size - resized_height) // 2
+def _resize_geometry(
+    image: np.ndarray,
+    boxes: Sequence[Sequence[float]],
+    preprocess: PreprocessConfig,
+    *,
+    original_width: int,
+    original_height: int,
+) -> tuple[np.ndarray, list[list[float]], dict[str, Any]]:
+    source_height, source_width = image.shape[:2]
+    resized_width, resized_height, output_width, output_height, pad_left, pad_top = _target_geometry(
+        source_width,
+        source_height,
+        preprocess,
+    )
+    resized = cv2.resize(image, (resized_width, resized_height), interpolation=cv2.INTER_LINEAR)
+    if pad_left or pad_top or output_width != resized_width or output_height != resized_height:
+        output = np.zeros((output_height, output_width, image.shape[2]), dtype=np.uint8)
+        output[pad_top : pad_top + resized_height, pad_left : pad_left + resized_width] = resized
+    else:
+        output = resized
 
-    return {
+    scale_x = resized_width / source_width
+    scale_y = resized_height / source_height
+    resized_boxes = [
+        [
+            float(x) * scale_x + pad_left,
+            float(y) * scale_y + pad_top,
+            float(w) * scale_x,
+            float(h) * scale_y,
+        ]
+        for x, y, w, h in boxes
+    ]
+    meta = {
         "original_width": original_width,
         "original_height": original_height,
         "resized_width": resized_width,
         "resized_height": resized_height,
         "pad_left": pad_left,
         "pad_top": pad_top,
-        "scale": scale,
-        "scale_x": resized_width / original_width,
-        "scale_y": resized_height / original_height,
+        "scale": min(scale_x, scale_y),
+        "scale_x": scale_x,
+        "scale_y": scale_y,
+        "resize_mode": preprocess.resize_mode,
     }
+    return np.ascontiguousarray(output), resized_boxes, meta
+
+
+def _target_geometry(
+    width: int,
+    height: int,
+    preprocess: PreprocessConfig,
+) -> tuple[int, int, int, int, int, int]:
+    if preprocess.resize_mode == "exact":
+        width_out = int(preprocess.width)
+        height_out = int(preprocess.height)
+        return width_out, height_out, width_out, height_out, 0, 0
+
+    if preprocess.resize_mode == "letterbox":
+        width_out = int(preprocess.width)
+        height_out = int(preprocess.height)
+        scale = min(width_out / width, height_out / height)
+        resized_width = max(1, int(round(width * scale)))
+        resized_height = max(1, int(round(height * scale)))
+        pad_left = (width_out - resized_width) // 2
+        pad_top = (height_out - resized_height) // 2
+        return (
+            resized_width,
+            resized_height,
+            width_out,
+            height_out,
+            pad_left,
+            pad_top,
+        )
+
+    shortest_edge = int(preprocess.shortest_edge)
+    longest_edge = int(preprocess.longest_edge)
+    scale = min(shortest_edge / min(width, height), longest_edge / max(width, height))
+    resized_width = max(1, int(round(width * scale)))
+    resized_height = max(1, int(round(height * scale)))
+    return resized_width, resized_height, resized_width, resized_height, 0, 0
 
 
 def bbox_to_original(bbox: BBox, preprocess: dict[str, Any]) -> BBox | None:

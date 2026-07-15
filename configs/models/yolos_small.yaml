@@ -1,4 +1,8 @@
 key: yolos_small
 backend: hf_trainer
 model_name_or_path: hustvl/yolos-small
+preprocess:
+  resize_mode: shortest_edge
+  shortest_edge: 800
+  longest_edge: 1333
 params: {}

@@ -21,7 +21,7 @@ class TransformTest(unittest.TestCase):
     def test_basic_transform_uses_albumentations_for_horizontal_flip(self):
         sample = HFDetectionRowParser(["car"], "meta").parse(row(size=(32, 24)))
         transformed = DetectionTransform(
-            PreprocessConfig(image_size=32),
+            PreprocessConfig(resize_mode="letterbox", height=32, width=32),
             AugmentationConfig(
                 policy="basic",
                 horizontal_flip_p=1.0,
@@ -39,7 +39,7 @@ class TransformTest(unittest.TestCase):
     def test_basic_transform_resize_pad_and_inverse(self):
         sample = HFDetectionRowParser(["car"], "meta").parse(row(size=(32, 24)))
         transformed = DetectionTransform(
-            PreprocessConfig(image_size=64),
+            PreprocessConfig(resize_mode="letterbox", height=64, width=64),
             AugmentationConfig(
                 policy="none",
                 horizontal_flip_p=0.0,
@@ -60,6 +60,42 @@ class TransformTest(unittest.TestCase):
         self.assertAlmostEqual(restored.w, 8.0, places=6)
         self.assertAlmostEqual(restored.h, 10.0, places=6)
 
+    def test_exact_resize_and_inverse_mapping(self):
+        sample = HFDetectionRowParser(["car"], "meta").parse(row(size=(32, 24)))
+        transformed = build_detection_transform(
+            PreprocessConfig(resize_mode="exact", height=60, width=80)
+        )(sample)
+        restored = bbox_to_original(
+            BBox.from_xywh(transformed.targets[0].bbox_xywh),
+            transformed.meta["preprocess"],
+        )
+
+        self.assertEqual(transformed.image.shape, (60, 80, 3))
+        for expected, actual in zip(
+            (10.0, 12.5, 20.0, 25.0), transformed.targets[0].bbox_xywh
+        ):
+            self.assertAlmostEqual(actual, expected, places=5)
+        self.assertIsNotNone(restored)
+        for expected, actual in zip((4.0, 5.0, 8.0, 10.0), restored.xywh()):
+            self.assertAlmostEqual(actual, expected, places=6)
+
+    def test_shortest_edge_resize_observes_longest_edge_cap(self):
+        preprocess = PreprocessConfig(
+            resize_mode="shortest_edge",
+            shortest_edge=800,
+            longest_edge=1333,
+        )
+        landscape = build_detection_transform(preprocess)(
+            HFDetectionRowParser(["car"], "meta").parse(row(size=(2000, 1000)))
+        )
+        portrait = build_detection_transform(preprocess)(
+            HFDetectionRowParser(["car"], "meta").parse(row(size=(1000, 2000)))
+        )
+
+        self.assertEqual(landscape.image.shape[:2], (666, 1333))
+        self.assertEqual(portrait.image.shape[:2], (1333, 666))
+        self.assertEqual(landscape.meta["preprocess"]["pad_left"], 0)
+        self.assertEqual(landscape.meta["preprocess"]["pad_top"], 0)
 
     def test_resize_pad_inverse_mapping_across_aspect_ratios(self):
         cases = [
@@ -95,7 +131,7 @@ class TransformTest(unittest.TestCase):
                         ],
                     )
                 )
-                transformed = build_detection_transform(PreprocessConfig(image_size=640))(sample)
+                transformed = build_detection_transform(PreprocessConfig(resize_mode="letterbox", height=640, width=640))(sample)
                 restored = bbox_to_original(
                     BBox.from_xywh(transformed.targets[0].bbox_xywh),
                     transformed.meta["preprocess"],
@@ -108,7 +144,7 @@ class TransformTest(unittest.TestCase):
 
     def test_prediction_bbox_is_clipped_and_mapped_to_original_image(self):
         sample = HFDetectionRowParser(["car"], "meta").parse(row(size=(32, 24)))
-        transformed = build_detection_transform(PreprocessConfig(image_size=64))(sample)
+        transformed = build_detection_transform(PreprocessConfig(resize_mode="letterbox", height=64, width=64))(sample)
 
         bbox = canonicalize_prediction_bbox(
             [-1.0, -1.0, 65.0, 65.0],
@@ -144,7 +180,7 @@ class TransformTest(unittest.TestCase):
     def test_basic_transform_allows_empty_targets(self):
         sample = HFDetectionRowParser(["car"], "meta").parse(row(size=(32, 24), objects=[]))
         transformed = DetectionTransform(
-            PreprocessConfig(image_size=32),
+            PreprocessConfig(resize_mode="letterbox", height=32, width=32),
             AugmentationConfig(
                 policy="basic",
                 horizontal_flip_p=1.0,
@@ -158,14 +194,14 @@ class TransformTest(unittest.TestCase):
 
     def test_none_policy_resizes_without_random_augmentation(self):
         sample = HFDetectionRowParser(["car"], "meta").parse(row(size=(32, 24)))
-        transformed = build_detection_transform(PreprocessConfig(image_size=64))(sample)
+        transformed = build_detection_transform(PreprocessConfig(resize_mode="letterbox", height=64, width=64))(sample)
 
         self.assertEqual(transformed.image.shape, (64, 64, 3))
         self.assertIn("preprocess", transformed.meta)
 
     def test_preprocess_only_transform_is_deterministic(self):
         sample = HFDetectionRowParser(["car"], "meta").parse(row(size=(32, 24)))
-        transform = build_detection_transform(PreprocessConfig(image_size=64))
+        transform = build_detection_transform(PreprocessConfig(resize_mode="letterbox", height=64, width=64))
 
         first = transform(sample)
         second = transform(sample)

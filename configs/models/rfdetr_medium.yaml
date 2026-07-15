@@ -1,4 +1,8 @@
 key: rfdetr_medium
 backend: hf_trainer
 model_name_or_path: Roboflow/rf-detr-medium
+preprocess:
+  resize_mode: exact
+  height: 576
+  width: 576
 params: {}

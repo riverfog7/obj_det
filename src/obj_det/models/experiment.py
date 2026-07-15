@@ -4,7 +4,7 @@ from pathlib import Path
 import yaml
 
 from obj_det.models.schemas.artifact import ModelArtifact
-from obj_det.models.schemas.config import AugmentationConfig, ModelConfig, PreprocessConfig
+from obj_det.models.schemas.config import AugmentationConfig, ModelConfig
 from obj_det.models.schemas.experiment import ExperimentConfig
 from obj_det.models.schemas.result import EvalResult
 from obj_det.models.schemas.tuning import BestTrial, SearchSpace, TuningResult
@@ -14,12 +14,12 @@ def load_experiment_config(path: Path) -> ExperimentConfig:
     path = Path(path)
     data = _read_yaml_mapping(path)
 
-    if data.get("preprocess_file") is not None:
-        if data.get("preprocess") is not None:
-            raise ValueError("Use either preprocess or preprocess_file, not both")
-        preprocess_path = _resolve(path.parent, Path(data["preprocess_file"]))
-        data["preprocess"] = _read_yaml_mapping(preprocess_path)
-        data.pop("preprocess_file")
+    if data.get("model_file") is not None:
+        if data.get("model") is not None:
+            raise ValueError("Use either model or model_file, not both")
+        model_path = _resolve(path.parent, Path(data["model_file"]))
+        data["model"] = load_model_config(model_path).model_dump(mode="python")
+        data.pop("model_file")
 
     if data.get("augmentation_file") is not None:
         if data.get("augmentation") is not None:
@@ -30,10 +30,6 @@ def load_experiment_config(path: Path) -> ExperimentConfig:
 
     cfg = ExperimentConfig.model_validate(data)
 
-    if cfg.model_file is not None:
-        model_path = _resolve(path.parent, cfg.model_file)
-        cfg = cfg.model_copy(update={"model": load_model_config(model_path), "model_file": None})
-
     if cfg.search_space_file is not None:
         search_path = _resolve(path.parent, cfg.search_space_file)
         cfg = cfg.model_copy(update={"search_space": load_search_space(search_path), "search_space_file": None})
@@ -43,10 +39,6 @@ def load_experiment_config(path: Path) -> ExperimentConfig:
 
 def load_model_config(path: Path) -> ModelConfig:
     return ModelConfig.model_validate(_read_yaml_mapping(Path(path)))
-
-
-def load_preprocess_config(path: Path) -> PreprocessConfig:
-    return PreprocessConfig.model_validate(_read_yaml_mapping(Path(path)))
 
 
 def load_augmentation_config(path: Path) -> AugmentationConfig:

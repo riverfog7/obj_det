@@ -56,7 +56,7 @@ class UltralyticsLoggingTest(unittest.TestCase):
 
     def test_custom_trainer_logs_every_configured_step_and_final_short_step(self):
         adapter = UltralyticsDetectionAdapter(
-            ModelConfig(key="yolo", backend="ultralytics", model_name_or_path="yolo11n.pt")
+            ModelConfig(key="yolo", backend="ultralytics", model_name_or_path="yolo11n.pt", preprocess=PreprocessConfig(resize_mode="letterbox", height=64, width=64))
         )
         logger = RecordingLogger()
         trainer_cls = adapter._trainer_class(FakeDetectionTrainer)
@@ -93,7 +93,7 @@ class UltralyticsLoggingTest(unittest.TestCase):
 
     def test_custom_trainer_uses_separate_train_and_eval_transforms(self):
         adapter = UltralyticsDetectionAdapter(
-            ModelConfig(key="yolo", backend="ultralytics", model_name_or_path="yolo11n.pt")
+            ModelConfig(key="yolo", backend="ultralytics", model_name_or_path="yolo11n.pt", preprocess=PreprocessConfig(resize_mode="letterbox", height=64, width=64))
         )
         trainer_cls = adapter._trainer_class(FakeDetectionTrainer)
         train_transform = object()
@@ -119,7 +119,7 @@ class UltralyticsLoggingTest(unittest.TestCase):
 
     def test_custom_trainer_returns_empty_validation_loader_without_val_source(self):
         adapter = UltralyticsDetectionAdapter(
-            ModelConfig(key="yolo", backend="ultralytics", model_name_or_path="yolo11n.pt")
+            ModelConfig(key="yolo", backend="ultralytics", model_name_or_path="yolo11n.pt", preprocess=PreprocessConfig(resize_mode="letterbox", height=64, width=64))
         )
         trainer_cls = adapter._trainer_class(FakeDetectionTrainer)
         trainer = trainer_cls(
@@ -161,7 +161,7 @@ class UltralyticsLoggingTest(unittest.TestCase):
         fake_ultralytics = ModuleType("ultralytics")
         fake_ultralytics.YOLO = FakeYOLO
         adapter = UltralyticsDetectionAdapter(
-            ModelConfig(key="yolo", backend="ultralytics", model_name_or_path="unused.pt")
+            ModelConfig(key="yolo", backend="ultralytics", model_name_or_path="unused.pt", preprocess=PreprocessConfig(resize_mode="letterbox", height=32, width=32))
         )
         artifact = ModelArtifact(
             model_key=adapter.key,
@@ -175,7 +175,7 @@ class UltralyticsLoggingTest(unittest.TestCase):
             result = adapter.evaluate(
                 Dataset.from_list([row()]),
                 artifact,
-                EvalConfig(classes=["car"], preprocess=PreprocessConfig(image_size=32)),
+                EvalConfig(classes=["car"], preprocess=PreprocessConfig(resize_mode="letterbox", height=32, width=32)),
             )
 
         self.assertEqual(result.num_predictions, 1)
@@ -183,13 +183,13 @@ class UltralyticsLoggingTest(unittest.TestCase):
 
     def test_controlled_protocol_disables_provider_augmentation_overrides(self):
         adapter = UltralyticsDetectionAdapter(
-            ModelConfig(key="yolo", backend="ultralytics", model_name_or_path="yolo11n.pt")
+            ModelConfig(key="yolo", backend="ultralytics", model_name_or_path="yolo11n.pt", preprocess=PreprocessConfig(resize_mode="letterbox", height=64, width=64))
         )
         cfg = TrainConfig(
             run_key="r",
             classes=["car"],
             output_dir=Path("runs/test"),
-            preprocess=PreprocessConfig(image_size=64),
+            preprocess=PreprocessConfig(resize_mode="letterbox", height=64, width=64),
             protocol="controlled",
             backend_params={"overrides": {"mosaic": 1.0, "hsv_h": 0.5}},
         )
@@ -202,13 +202,13 @@ class UltralyticsLoggingTest(unittest.TestCase):
 
     def test_controlled_protocol_rejects_provider_optimizer_scheduler_overrides(self):
         adapter = UltralyticsDetectionAdapter(
-            ModelConfig(key="yolo", backend="ultralytics", model_name_or_path="yolo11n.pt")
+            ModelConfig(key="yolo", backend="ultralytics", model_name_or_path="yolo11n.pt", preprocess=PreprocessConfig(resize_mode="letterbox", height=64, width=64))
         )
         cfg = TrainConfig(
             run_key="r",
             classes=["car"],
             output_dir=Path("runs/test"),
-            preprocess=PreprocessConfig(image_size=64),
+            preprocess=PreprocessConfig(resize_mode="letterbox", height=64, width=64),
             protocol="controlled",
             hparams={"learning_rate": 3.0e-4},
             backend_params={
@@ -246,6 +246,7 @@ class UltralyticsLoggingTest(unittest.TestCase):
                 key="yolo",
                 backend="ultralytics",
                 model_name_or_path="architecture.yaml",
+                preprocess=PreprocessConfig(resize_mode="letterbox", height=64, width=64),
                 weights="pretrained.pt",
             )
         )
@@ -253,7 +254,7 @@ class UltralyticsLoggingTest(unittest.TestCase):
             run_key="r",
             classes=["car"],
             output_dir=Path("runs/test"),
-            preprocess=PreprocessConfig(image_size=64),
+            preprocess=PreprocessConfig(resize_mode="letterbox", height=64, width=64),
             hparams={"learning_rate": 3.0e-4},
         )
 
@@ -263,13 +264,13 @@ class UltralyticsLoggingTest(unittest.TestCase):
 
     def test_multi_device_training_fails_explicitly(self):
         adapter = UltralyticsDetectionAdapter(
-            ModelConfig(key="yolo", backend="ultralytics", model_name_or_path="yolo11n.pt")
+            ModelConfig(key="yolo", backend="ultralytics", model_name_or_path="yolo11n.pt", preprocess=PreprocessConfig(resize_mode="letterbox", height=64, width=64))
         )
         cfg = TrainConfig(
             run_key="r",
             classes=["car"],
             output_dir=Path("runs/test"),
-            preprocess=PreprocessConfig(image_size=64),
+            preprocess=PreprocessConfig(resize_mode="letterbox", height=64, width=64),
             backend_params={"device": "0,1"},
         )
 
@@ -278,7 +279,7 @@ class UltralyticsLoggingTest(unittest.TestCase):
 
     def test_non_divisible_accumulation_flushes_on_final_batch_each_epoch(self):
         adapter = UltralyticsDetectionAdapter(
-            ModelConfig(key="yolo", backend="ultralytics", model_name_or_path="yolo11n.pt")
+            ModelConfig(key="yolo", backend="ultralytics", model_name_or_path="yolo11n.pt", preprocess=PreprocessConfig(resize_mode="letterbox", height=64, width=64))
         )
         trainer_cls = adapter._trainer_class(FakeDetectionTrainer)
         trainer = trainer_cls(
@@ -326,7 +327,7 @@ class UltralyticsLoggingTest(unittest.TestCase):
                 self.scaler.value = 4.0
 
         adapter = UltralyticsDetectionAdapter(
-            ModelConfig(key="yolo", backend="ultralytics", model_name_or_path="yolo11n.pt")
+            ModelConfig(key="yolo", backend="ultralytics", model_name_or_path="yolo11n.pt", preprocess=PreprocessConfig(resize_mode="letterbox", height=64, width=64))
         )
         trainer_cls = adapter._trainer_class(OverflowDetectionTrainer)
         trainer = trainer_cls(
@@ -357,7 +358,7 @@ class UltralyticsLoggingTest(unittest.TestCase):
                 return True
 
         adapter = UltralyticsDetectionAdapter(
-            ModelConfig(key="yolo", backend="ultralytics", model_name_or_path="yolo11n.pt")
+            ModelConfig(key="yolo", backend="ultralytics", model_name_or_path="yolo11n.pt", preprocess=PreprocessConfig(resize_mode="letterbox", height=64, width=64))
         )
         trainer_cls = adapter._trainer_class(SavingFakeDetectionTrainer)
         trainer = trainer_cls(
@@ -387,7 +388,7 @@ class UltralyticsLoggingTest(unittest.TestCase):
 
     def test_hpo_epoch_end_does_not_record_nonexistent_intermediate_checkpoints(self):
         adapter = UltralyticsDetectionAdapter(
-            ModelConfig(key="yolo", backend="ultralytics", model_name_or_path="yolo11n.pt")
+            ModelConfig(key="yolo", backend="ultralytics", model_name_or_path="yolo11n.pt", preprocess=PreprocessConfig(resize_mode="letterbox", height=64, width=64))
         )
         trainer_cls = adapter._trainer_class(FakeDetectionTrainer)
         with TemporaryDirectory() as tmp:
@@ -419,13 +420,13 @@ class UltralyticsLoggingTest(unittest.TestCase):
 
     def test_controlled_train_overrides_use_fixed_final_lr_ratio(self):
         adapter = UltralyticsDetectionAdapter(
-            ModelConfig(key="yolo", backend="ultralytics", model_name_or_path="yolo11n.pt")
+            ModelConfig(key="yolo", backend="ultralytics", model_name_or_path="yolo11n.pt", preprocess=PreprocessConfig(resize_mode="letterbox", height=64, width=64))
         )
         cfg = TrainConfig(
             run_key="r",
             classes=["car"],
             output_dir=Path("runs/test"),
-            preprocess=PreprocessConfig(image_size=64),
+            preprocess=PreprocessConfig(resize_mode="letterbox", height=64, width=64),
             hparams={"lrf": 0.05},
         )
 
@@ -435,7 +436,7 @@ class UltralyticsLoggingTest(unittest.TestCase):
 
     def test_artifact_uses_last_checkpoint_for_external_eval(self):
         adapter = UltralyticsDetectionAdapter(
-            ModelConfig(key="yolo", backend="ultralytics", model_name_or_path="yolo11n.pt")
+            ModelConfig(key="yolo", backend="ultralytics", model_name_or_path="yolo11n.pt", preprocess=PreprocessConfig(resize_mode="letterbox", height=64, width=64))
         )
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -455,7 +456,7 @@ class UltralyticsLoggingTest(unittest.TestCase):
                     run_key="r",
                     classes=["car"],
                     output_dir=root,
-                    preprocess=PreprocessConfig(image_size=64),
+                    preprocess=PreprocessConfig(resize_mode="letterbox", height=64, width=64),
                 ),
             )
 

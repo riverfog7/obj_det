@@ -5,7 +5,6 @@ dataset:
   test_split: test
 
 model_file: ../models/yolo26m.yaml
-preprocess_file: ../preprocess/640.yaml
 augmentation_file: ../augmentations/basic_light.yaml
 
 classes:

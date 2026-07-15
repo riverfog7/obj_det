@@ -62,7 +62,7 @@ class ExperimentPlanTest(unittest.TestCase):
         self.assertEqual(tv.train.scheduler, yolo.train.scheduler)
         self.assertEqual(tv.train.classes, ["car", "person"])
         self.assertEqual(tv.train.label_mode, "meta")
-        self.assertEqual(tv.train.preprocess.image_size, 32)
+        self.assertEqual(tv.train.preprocess.height, 32)
         self.assertEqual(tv.train.augmentation.color_jitter_p, 0.5)
         self.assertEqual(set(tv.search_space.params), {"learning_rate"})
 
@@ -231,7 +231,6 @@ class ExperimentPlanTest(unittest.TestCase):
         for name in [
             "dataset_refs",
             "class_spaces",
-            "preprocess",
             "augmentations",
             "recipes",
             "models",
@@ -249,7 +248,6 @@ class ExperimentPlanTest(unittest.TestCase):
             "label_mode: meta\nclasses: [car, person]\n",
             encoding="utf-8",
         )
-        (root / "preprocess" / "32.yaml").write_text("image_size: 32\n", encoding="utf-8")
         (root / "augmentations" / "basic.yaml").write_text(
             "policy: basic\nhorizontal_flip_p: 0.5\ncolor_jitter_strength: 0.05\ncolor_jitter_p: 0.5\n",
             encoding="utf-8",
@@ -258,7 +256,6 @@ class ExperimentPlanTest(unittest.TestCase):
             "\n".join(
                 [
                     "protocol: controlled",
-                    "preprocess_file: ../preprocess/32.yaml",
                     "augmentation_file: ../augmentations/basic.yaml",
                     "search_space_file: ../search_spaces/global.yaml",
                     "train:",
@@ -289,11 +286,13 @@ class ExperimentPlanTest(unittest.TestCase):
             encoding="utf-8",
         )
         (root / "models" / "yolo.yaml").write_text(
-            "key: yolo\nbackend: ultralytics\nmodel_name_or_path: yolo.pt\n",
+            "key: yolo\nbackend: ultralytics\nmodel_name_or_path: yolo.pt\n"
+            "preprocess:\n  resize_mode: letterbox\n  height: 32\n  width: 32\n",
             encoding="utf-8",
         )
         (root / "models" / "tv.yaml").write_text(
-            "key: tv\nbackend: torchvision\nmodel_name_or_path: fasterrcnn_resnet50_fpn\n",
+            "key: tv\nbackend: torchvision\nmodel_name_or_path: fasterrcnn_resnet50_fpn\n"
+            "preprocess:\n  resize_mode: letterbox\n  height: 32\n  width: 32\n",
             encoding="utf-8",
         )
         (root / "model_groups" / "g.yaml").write_text(

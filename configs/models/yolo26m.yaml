@@ -1,5 +1,9 @@
 key: yolo26m
 backend: ultralytics
 model_name_or_path: yolo26m.pt
+preprocess:
+  resize_mode: letterbox
+  height: 640
+  width: 640
 params:
   task: detect

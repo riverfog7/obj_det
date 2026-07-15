@@ -11,7 +11,6 @@ from .config import (
     EvalConfig,
     ModelConfig,
     PredictConfig,
-    PreprocessConfig,
     TrainConfig,
     validate_class_list,
 )
@@ -47,8 +46,6 @@ class ExperimentConfig(ModelSchema):
 
     model: ModelConfig | None = None
     model_file: Path | None = None
-    preprocess: PreprocessConfig | None = None
-    preprocess_file: Path | None = None
     augmentation: AugmentationConfig | None = None
     augmentation_file: Path | None = None
 
@@ -70,7 +67,10 @@ class ExperimentConfig(ModelSchema):
             return data
 
         classes = data.get("classes")
-        preprocess = data.get("preprocess")
+        model = data.get("model")
+        preprocess = model.preprocess if isinstance(model, ModelConfig) else None
+        if isinstance(model, dict):
+            preprocess = model.get("preprocess")
         augmentation = data.get("augmentation")
         if classes is None and preprocess is None and augmentation is None:
             return data
@@ -119,8 +119,6 @@ class ExperimentConfig(ModelSchema):
             raise ValueError("Use either model or model_file, not both")
         if self.model is None and self.model_file is None:
             raise ValueError("Either model or model_file is required")
-        if self.preprocess is not None and self.preprocess_file is not None:
-            raise ValueError("Use either preprocess or preprocess_file, not both")
         if self.augmentation is not None and self.augmentation_file is not None:
             raise ValueError("Use either augmentation or augmentation_file, not both")
         if self.search_space is not None and self.search_space_file is not None:
