@@ -28,7 +28,7 @@ class TrainingProtocolTest(unittest.TestCase):
                 require_single_process(context="controlled test")
 
     def test_hpo_and_final_schedules_match_for_first_ten_epochs(self):
-        steps_per_epoch = optimizer_steps_per_epoch(101, 4)
+        steps_per_epoch = optimizer_steps_per_epoch(101)
         warmup_steps = steps_per_epoch
         total_steps = steps_per_epoch * 50
 

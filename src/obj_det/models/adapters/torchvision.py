@@ -541,7 +541,7 @@ class TorchvisionDetectionAdapter(BaseModelAdapter):
             max_steps=max_steps,
             per_device_train_batch_size=train_cfg.batch_size,
             per_device_eval_batch_size=train_cfg.batch_size,
-            gradient_accumulation_steps=train_cfg.gradient_accumulation_steps,
+            gradient_accumulation_steps=1,
             learning_rate=float(hparams.get("learning_rate", 0.001)),
             weight_decay=float(train_cfg.optimizer.weight_decay),
             warmup_ratio=0.0,
@@ -629,7 +629,6 @@ class _TorchvisionTrainer(Trainer):
         num_batches = len(self.get_train_dataloader())
         steps_per_epoch = optimizer_steps_per_epoch(
             num_batches,
-            self.train_cfg.gradient_accumulation_steps,
         )
         cfg = self.train_cfg.scheduler
         warmup_steps = int(round(cfg.warmup_epochs * steps_per_epoch))

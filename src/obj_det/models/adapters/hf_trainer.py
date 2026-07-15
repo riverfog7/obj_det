@@ -108,7 +108,6 @@ class HFTrainerDetectionAdapter(BaseModelAdapter):
                     raise ValueError("HF scheduler requires an initialized optimizer")
                 steps_per_epoch = optimizer_steps_per_epoch(
                     len(self.get_train_dataloader()),
-                    train_cfg.gradient_accumulation_steps,
                 )
                 scheduler_cfg = train_cfg.scheduler
                 self.lr_scheduler = build_warmup_cosine_scheduler(
@@ -370,7 +369,7 @@ class HFTrainerDetectionAdapter(BaseModelAdapter):
             max_steps=max_steps,
             per_device_train_batch_size=train_cfg.batch_size,
             per_device_eval_batch_size=train_cfg.batch_size,
-            gradient_accumulation_steps=train_cfg.gradient_accumulation_steps,
+            gradient_accumulation_steps=1,
             learning_rate=float(hparams.get("learning_rate", 5e-5)),
             weight_decay=float(train_cfg.optimizer.weight_decay),
             warmup_ratio=0.0,

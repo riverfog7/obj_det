@@ -221,11 +221,10 @@ class ExperimentPlanTest(unittest.TestCase):
                 self.assertEqual(exp.eval.max_detections_per_image, 300)
                 self.assertEqual(exp.predict.max_detections_per_image, 300)
 
-        self.assertEqual(by_key["yolo26n"].train.batch_size, 8)
-        self.assertEqual(by_key["yolo26n"].eval.batch_size, 8)
-        self.assertEqual(by_key["yolo26n"].predict.batch_size, 8)
-        self.assertEqual(by_key["yolo26m"].train.batch_size, 16)
-        self.assertEqual(by_key["rfdetr_base"].train.batch_size, 4)
+        for exp in exps:
+            self.assertEqual(exp.train.batch_size, 2)
+            self.assertEqual(exp.eval.batch_size, 2)
+            self.assertEqual(exp.predict.batch_size, 2)
 
     def _write_plan_tree(self, root: Path, *, include_torchvision_default: bool = True) -> Path:
         for name in [

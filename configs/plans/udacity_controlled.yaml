@@ -16,66 +16,30 @@ run_template:
 backend_defaults:
   ultralytics:
     train:
-      batch_size: 8
       loader:
         num_workers: 16
         pin_memory: true
         persistent_workers: true
         prefetch_factor: 4
         decode_backend: opencv
-    eval:
-      batch_size: 8
-    predict:
-      batch_size: 8
 
   hf_trainer:
     train:
-      batch_size: 8
       loader:
         num_workers: 8
         pin_memory: true
         persistent_workers: true
         prefetch_factor: 4
         decode_backend: opencv
-    eval:
-      batch_size: 8
-    predict:
-      batch_size: 8
 
   torchvision:
     train:
-      batch_size: 8
       loader:
         num_workers: 8
         pin_memory: true
         persistent_workers: true
         prefetch_factor: 4
         decode_backend: opencv
-    eval:
-      batch_size: 8
-    predict:
-      batch_size: 8
-
-model_overrides:
-  rfdetr_base:
-    train:
-      batch_size: 4
-    eval:
-      batch_size: 4
-    predict:
-      batch_size: 4
-
-  yolo26m:
-    train:
-      batch_size: 16
-
-  yolo11m:
-    train:
-      batch_size: 16
-
-  yolov8m:
-    train:
-      batch_size: 16
 
 tags:
   - udacity

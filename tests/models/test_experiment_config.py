@@ -74,7 +74,6 @@ class ExperimentConfigTest(unittest.TestCase):
                         "enabled": True,
                         "every_epochs": 1,
                     },
-                    "gradient_accumulation_steps": 2,
                     "loader": {
                         "num_workers": 2,
                         "pin_memory": True,
@@ -96,7 +95,6 @@ class ExperimentConfigTest(unittest.TestCase):
         self.assertEqual(cfg.train.augmentation.horizontal_flip_p, 0.5)
         self.assertTrue(cfg.train.eval_strategy.enabled)
         self.assertEqual(cfg.train.eval_strategy.every_epochs, 1)
-        self.assertEqual(cfg.train.gradient_accumulation_steps, 2)
         self.assertEqual(cfg.train.optimizer.name, "adamw")
         self.assertEqual(cfg.train.scheduler.total_epochs, 50)
         self.assertEqual(cfg.train.checkpoint.save_every_epochs, 1)
@@ -297,6 +295,7 @@ class ExperimentConfigTest(unittest.TestCase):
         removed_fields = {
             "effective_batch_size": 16,
             "per_device_batch_size": 8,
+            "gradient_accumulation_steps": 2,
             "eval_metric": "map_50_95",
             "eval_every_epochs": 1,
         }

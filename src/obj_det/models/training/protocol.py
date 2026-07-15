@@ -64,12 +64,10 @@ def build_adamw_param_groups(model: nn.Module, *, weight_decay: float) -> list[d
     return groups
 
 
-def optimizer_steps_per_epoch(num_batches: int, gradient_accumulation_steps: int = 1) -> int:
+def optimizer_steps_per_epoch(num_batches: int) -> int:
     if num_batches <= 0:
         raise ValueError("num_batches must be positive")
-    if gradient_accumulation_steps <= 0:
-        raise ValueError("gradient_accumulation_steps must be positive")
-    return max(1, math.ceil(num_batches / gradient_accumulation_steps))
+    return num_batches
 
 
 def warmup_cosine_factor(

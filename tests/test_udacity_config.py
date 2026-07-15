@@ -32,7 +32,7 @@ class UdacityConfigTest(unittest.TestCase):
         self.assertTrue(all(set(exp.search_space.params) == {"learning_rate"} for exp in experiments))
         self.assertEqual(
             {exp.model.key: exp for exp in experiments}["rfdetr_base"].train.batch_size,
-            4,
+            2,
         )
 
 

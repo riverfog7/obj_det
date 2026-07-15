@@ -114,10 +114,10 @@ class CliTest(unittest.TestCase):
         cfg = ExperimentRunner(exp).run_config()
 
         self.assertEqual(cfg["batch"]["batch_size"], 8)
-        self.assertEqual(cfg["batch"]["gradient_accumulation_steps"], 1)
+        self.assertFalse(cfg["batch"]["gradient_accumulation"])
         self.assertEqual(
             cfg["batch"]["effective_batch_size"],
-            8 * cfg["batch"]["world_size"] * cfg["batch"]["gradient_accumulation_steps"],
+            8 * cfg["batch"]["world_size"],
         )
 
     def test_child_logger_factory_uses_child_name_group_and_path(self):

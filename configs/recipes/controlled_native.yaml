@@ -8,7 +8,7 @@ train:
   seed: 0
   logging_steps: 100
   amp: true
-  gradient_accumulation_steps: 1
+  batch_size: 2
   eval_strategy:
     enabled: true
     every_epochs: 1
@@ -38,6 +38,7 @@ train:
     restore_best: true
 
 eval:
+  batch_size: 2
   conf_threshold: 0.001
   iou_threshold: 0.7
   max_detections_per_image: 300
@@ -47,6 +48,7 @@ eval:
   compute_per_size: true
 
 predict:
+  batch_size: 2
   conf_threshold: 0.001
   iou_threshold: 0.7
   max_detections_per_image: 300

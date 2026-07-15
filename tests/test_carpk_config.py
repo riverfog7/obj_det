@@ -31,7 +31,7 @@ class CarpkConfigTest(unittest.TestCase):
         self.assertTrue(all(set(exp.search_space.params) == {"learning_rate"} for exp in experiments))
         self.assertEqual(
             {exp.model.key: exp for exp in experiments}["yolo26m"].train.batch_size,
-            16,
+            2,
         )
 
 

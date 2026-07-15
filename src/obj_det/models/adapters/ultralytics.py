@@ -116,7 +116,6 @@ class UltralyticsDetectionAdapter(BaseModelAdapter):
             log_prefix=log_prefix,
             logging_steps=train_cfg.logging_steps,
             stop_after_epochs=int(train_cfg.max_epochs or train_cfg.scheduler.total_epochs),
-            gradient_accumulation_steps=train_cfg.gradient_accumulation_steps,
             optimizer_cfg=train_cfg.optimizer,
             scheduler_cfg=train_cfg.scheduler,
             checkpoint_state=checkpoint_state,
@@ -249,7 +248,7 @@ class UltralyticsDetectionAdapter(BaseModelAdapter):
             "warmup_epochs": 0.0,
             "cos_lr": False,
             "patience": 0,
-            "nbs": int(train_cfg.batch_size * train_cfg.gradient_accumulation_steps),
+            "nbs": int(train_cfg.batch_size),
         }
         overrides.update(train_cfg.backend_params.get("overrides", {}))
         overrides.update(
@@ -263,7 +262,7 @@ class UltralyticsDetectionAdapter(BaseModelAdapter):
                 "warmup_epochs": 0.0,
                 "cos_lr": False,
                 "patience": 0,
-                "nbs": int(train_cfg.batch_size * train_cfg.gradient_accumulation_steps),
+                "nbs": int(train_cfg.batch_size),
             }
         )
         overrides.update(_CONTROLLED_AUG_OFF)
@@ -364,7 +363,6 @@ class UltralyticsDetectionAdapter(BaseModelAdapter):
                 log_prefix,
                 logging_steps,
                 stop_after_epochs=1,
-                gradient_accumulation_steps=1,
                 optimizer_cfg=None,
                 scheduler_cfg=None,
                 checkpoint_state=None,
@@ -398,25 +396,13 @@ class UltralyticsDetectionAdapter(BaseModelAdapter):
                 self._protocol_train_cfg = train_cfg
                 self._protocol_scheduler = None
                 self._protocol_optimizer_steps = 0
-                self._protocol_nominal_accumulate = gradient_accumulation_steps
-                self._protocol_epoch_batches = 0
                 self._protocol_last_eval_epoch = 0
                 self._protocol_stop_at_epoch_end = False
                 super().__init__(*args, **kwargs)
 
             def run_callbacks(self, event: str):
                 super().run_callbacks(event)
-                if event == "on_train_epoch_start":
-                    self._protocol_epoch_batches = 0
-                    self.accumulate = self._protocol_nominal_accumulate
-                elif event == "on_train_batch_start":
-                    current_batch = self._protocol_epoch_batches + 1
-                    if current_batch == len(self.train_loader):
-                        remainder = len(self.train_loader) % self._protocol_nominal_accumulate
-                        if remainder:
-                            self.accumulate = remainder
-                elif event == "on_train_batch_end":
-                    self._protocol_epoch_batches += 1
+                if event == "on_train_batch_end":
                     self._hf_seen_steps += 1
                     if self._hf_seen_steps % self._hf_logging_steps == 0:
                         self._log_step_metrics()
@@ -513,11 +499,8 @@ class UltralyticsDetectionAdapter(BaseModelAdapter):
                 )
 
             def _setup_scheduler(self):
-                self._protocol_nominal_accumulate = int(self.accumulate)
-                steps_per_epoch = optimizer_steps_per_epoch(
-                    len(self.train_loader),
-                    self._protocol_nominal_accumulate,
-                )
+                self.accumulate = 1
+                steps_per_epoch = optimizer_steps_per_epoch(len(self.train_loader))
                 cfg = self._protocol_scheduler_cfg
                 self._protocol_scheduler = build_warmup_cosine_scheduler(
                     self.optimizer,

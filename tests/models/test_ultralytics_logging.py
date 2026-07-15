@@ -277,7 +277,7 @@ class UltralyticsLoggingTest(unittest.TestCase):
         with self.assertRaisesRegex(NotImplementedError, "single training process"):
             adapter._validate_single_process_device(cfg)
 
-    def test_non_divisible_accumulation_flushes_on_final_batch_each_epoch(self):
+    def test_shared_scheduler_forces_one_update_per_batch(self):
         adapter = UltralyticsDetectionAdapter(
             ModelConfig(key="yolo", backend="ultralytics", model_name_or_path="yolo11n.pt", preprocess=PreprocessConfig(resize_mode="letterbox", height=64, width=64))
         )
@@ -293,26 +293,27 @@ class UltralyticsLoggingTest(unittest.TestCase):
             logger=None,
             log_prefix="train",
             logging_steps=100,
-            gradient_accumulation_steps=4,
+            scheduler_cfg=SimpleNamespace(
+                warmup_epochs=1,
+                total_epochs=50,
+                min_lr_ratio=0.01,
+            ),
         )
         trainer.train_loader = [object()] * 10
-        trainer._protocol_nominal_accumulate = 4
+        scheduler = SimpleNamespace(last_epoch=0)
+        with patch(
+            "obj_det.models.adapters.ultralytics.build_warmup_cosine_scheduler",
+            return_value=scheduler,
+        ) as factory:
+            trainer._setup_scheduler()
 
-        last_optimizer_batch = -1
-        optimizer_batches = []
-        for epoch in range(2):
-            trainer.run_callbacks("on_train_epoch_start")
-            for batch_index in range(10):
-                trainer.run_callbacks("on_train_batch_start")
-                global_batch = epoch * 10 + batch_index
-                if global_batch - last_optimizer_batch >= trainer.accumulate:
-                    trainer.optimizer_step()
-                    last_optimizer_batch = global_batch
-                    optimizer_batches.append(global_batch)
-                trainer.run_callbacks("on_train_batch_end")
-
-        self.assertEqual(optimizer_batches, [3, 7, 9, 13, 17, 19])
-        self.assertEqual(trainer._protocol_optimizer_steps, 6)
+        self.assertEqual(trainer.accumulate, 1)
+        factory.assert_called_once_with(
+            trainer.optimizer,
+            warmup_steps=10,
+            total_steps=500,
+            min_lr_ratio=0.01,
+        )
 
     def test_amp_overflow_does_not_advance_optimizer_step_scheduler(self):
         class ScaleTracker:
