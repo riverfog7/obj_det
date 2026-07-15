@@ -163,7 +163,7 @@ class TrainConfig(ModelSchema):
 class PredictConfig(ModelSchema):
     classes: list[str]
     label_mode: LabelMode = "meta"
-    batch_size: int = Field(default=8, gt=0)
+    batch_size: int = Field(default=16, gt=0)
     preprocess: PreprocessConfig
     conf_threshold: float = Field(default=0.001, ge=0.0, le=1.0)
     iou_threshold: float = Field(default=0.7, ge=0.0, le=1.0)
@@ -179,7 +179,7 @@ class PredictConfig(ModelSchema):
 class EvalConfig(ModelSchema):
     classes: list[str]
     label_mode: LabelMode = "meta"
-    batch_size: int = Field(default=8, gt=0)
+    batch_size: int = Field(default=16, gt=0)
     preprocess: PreprocessConfig
     conf_threshold: float = Field(default=0.001, ge=0.0, le=1.0)
     iou_threshold: float = Field(default=0.7, ge=0.0, le=1.0)

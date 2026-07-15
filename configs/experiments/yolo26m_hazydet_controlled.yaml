@@ -21,7 +21,7 @@ train:
   output_dir: runs/yolo26m/hazydet/controlled
   protocol: controlled
   max_epochs: 50
-  batch_size: 2
+  batch_size: 16
   logging_steps: 100
   eval_strategy:
     enabled: true
@@ -61,7 +61,7 @@ train:
     learning_rate: 0.003
 
 eval:
-  batch_size: 2
+  batch_size: 16
   conf_threshold: 0.001
   iou_threshold: 0.7
   max_detections_per_image: 300
@@ -71,7 +71,7 @@ eval:
   compute_per_size: true
 
 predict:
-  batch_size: 2
+  batch_size: 16
   conf_threshold: 0.001
   iou_threshold: 0.7
   max_detections_per_image: 300

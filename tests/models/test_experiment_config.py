@@ -7,7 +7,13 @@ from tempfile import TemporaryDirectory
 from pydantic import ValidationError
 
 from obj_det.models.experiment import load_experiment_config
-from obj_det.models.schemas import ModelConfig, PreprocessConfig, TrainConfig
+from obj_det.models.schemas import (
+    EvalConfig,
+    ModelConfig,
+    PredictConfig,
+    PreprocessConfig,
+    TrainConfig,
+)
 from obj_det.models.schemas.experiment import ExperimentConfig
 from obj_det.models.schemas.tuning import TuningConfig
 
@@ -121,6 +127,7 @@ class ExperimentConfigTest(unittest.TestCase):
 
     def test_controlled_protocol_schema_defaults_and_validation(self):
         tuning = TuningConfig(study_name="s", output_dir=Path("runs/hpo"))
+        preprocess = PreprocessConfig(resize_mode="letterbox", height=32, width=32)
 
         self.assertEqual(tuning.n_trials, 8)
         self.assertEqual(tuning.trial_epochs, 10)
@@ -129,12 +136,23 @@ class ExperimentConfigTest(unittest.TestCase):
         self.assertEqual(tuning.pruner, "none")
         self.assertEqual(tuning.objective_metric, "map_50_95")
         self.assertEqual(tuning.save_strategy, "final_only")
+        self.assertEqual(
+            TrainConfig(
+                run_key="r",
+                classes=["car"],
+                output_dir=Path("runs/r"),
+                preprocess=preprocess,
+            ).batch_size,
+            16,
+        )
+        self.assertEqual(PredictConfig(classes=["car"], preprocess=preprocess).batch_size, 16)
+        self.assertEqual(EvalConfig(classes=["car"], preprocess=preprocess).batch_size, 16)
 
         train_kwargs = {
             "run_key": "r",
             "classes": ["car"],
             "output_dir": Path("runs/r"),
-            "preprocess": PreprocessConfig(resize_mode="letterbox", height=32, width=32),
+            "preprocess": preprocess,
         }
         with self.assertRaises(ValidationError):
             TrainConfig(**train_kwargs, protocol="equal_hpo")

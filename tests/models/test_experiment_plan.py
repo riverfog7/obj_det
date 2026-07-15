@@ -221,9 +221,9 @@ class ExperimentPlanTest(unittest.TestCase):
                 self.assertEqual(exp.predict.max_detections_per_image, 300)
 
         for exp in exps:
-            self.assertEqual(exp.train.batch_size, 2)
-            self.assertEqual(exp.eval.batch_size, 2)
-            self.assertEqual(exp.predict.batch_size, 2)
+            self.assertEqual(exp.train.batch_size, 16)
+            self.assertEqual(exp.eval.batch_size, 16)
+            self.assertEqual(exp.predict.batch_size, 16)
 
     def test_repo_controlled_matrix_expands_all_ten_plans(self):
         expected_dataset_keys = {
@@ -258,7 +258,9 @@ class ExperimentPlanTest(unittest.TestCase):
                 self.assertTrue(
                     all(exp.dataset.path == Path(f"datasets/{dataset_key}") for exp in exps)
                 )
-                self.assertTrue(all(exp.train.batch_size == 2 for exp in exps))
+                self.assertTrue(all(exp.train.batch_size == 16 for exp in exps))
+                self.assertTrue(all(exp.eval.batch_size == 16 for exp in exps))
+                self.assertTrue(all(exp.predict.batch_size == 16 for exp in exps))
                 self.assertTrue(
                     all(set(exp.search_space.params) == {"learning_rate"} for exp in exps)
                 )

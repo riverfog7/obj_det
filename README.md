@@ -360,7 +360,7 @@ train_cfg = TrainConfig(
     augmentation=augmentation,
     loader=DataLoaderConfig(num_workers=16, persistent_workers=True, prefetch_factor=4),
     max_epochs=50,
-    batch_size=2,
+    batch_size=16,
 )
 
 eval_cfg = EvalConfig(
@@ -402,7 +402,7 @@ train/validation/test split remain fail-closed and have no controlled plan.
 but plans are the preferred scalable source of truth.
 
 The controlled recipe is `configs/recipes/controlled_native.yaml`. Every model
-declares its own native input geometry while the comparison keeps batch size 2
+declares its own native input geometry while the comparison keeps batch size 16
 with no gradient accumulation, COCO detector pretraining, fully trainable
 backbones, AdamW, gradient clipping at 1.0, raw (non-EMA) weights, deterministic
 execution, and a one-epoch warmup followed by a 50-epoch cosine schedule.
