@@ -89,7 +89,8 @@ Dataset configs live in:
 configs/datasets/
 ```
 
-The repository contains 13 source configs and matching dataset refs:
+The repository contains 13 raw-source configs and one additional ref for the
+locally merged dataset:
 
 | Dataset key | Source format | Converted splits | Controlled plan |
 | --- | --- | --- | --- |
@@ -106,6 +107,7 @@ The repository contains 13 source configs and matching dataset refs:
 | `visdrone` | VisDrone detection TXT | train, val, test | yes |
 | `voc2007` | Pascal VOC XML | train, val, test | yes |
 | `xwod` | YOLO | train, val, test | yes |
+| `merged_traffic6` | merged HF DatasetDict | train, val, test | yes |
 
 A config describes where the raw dataset is and how to interpret it.
 
@@ -225,6 +227,48 @@ print(ds)
 ```
 
 Do not use `load_dataset("datasets/xwod")` for local saved outputs. That is for dataset scripts/files and can infer/merge splits differently.
+
+## Merge converted datasets
+
+Merge the obtainable converted datasets into one local six-class dataset:
+
+```bash
+uv run python scripts/merge_datasets.py
+```
+
+Use `--force` to replace an existing merged output, or override the paths with
+`--input-root` and `--output`. The default output is
+`datasets/merged_traffic6`.
+
+The merge includes ACDC, CARPK, DAWN, ExDark, HazyDet, HazyDet-clear,
+HazyDet-real, VisDrone, VOC2007, and XWOD. It omits BDD100K because the current
+Detection 2020 package is unavailable, Cityscapes because its official source
+is account-gated, and Udacity because the obtainable source does not carry an
+authoritative train/validation/test assignment.
+
+The final classes are `person`, `bicycle`, `motorcycle`, `car`, `bus`, and
+`truck`. The fixed merge policy harmonizes pedestrian/people/rider as person,
+bike as bicycle, motorbike/motor/tricycle/awning-tricycle as motorcycle, and
+van as car. CARPK's numeric `0` label maps to car only within CARPK. All other
+classes, ignored objects, and images left without a retained object are
+removed.
+
+Surviving rows keep their original `train`, `val`, or `test` split. Exact
+duplicates and aligned HazyDet clear/hazy variants are treated as one lineage.
+When a lineage spans splits, only rows already in the most protected split are
+retained, using `test > val > train`; rows are never reassigned. Richer aligned
+annotations are shared across retained variants when image dimensions match.
+
+Run the complete controlled model plan on the merged dataset with:
+
+```bash
+uv run obj-det models plan run --all configs/plans/merged_traffic6_controlled.yaml
+```
+
+The combined source licenses include non-commercial and dataset-specific
+terms, so the script deliberately creates a local artifact and has no upload
+option. Inspect `datasets/merged_traffic6/merge_manifest.json` for source,
+filtering, deduplication, split, class, provenance, and reproducibility counts.
 
 ## Output columns
 
