@@ -257,6 +257,18 @@ of `person`, `bicycle`, `motorcycle`, `car`, `bus`, or `truck`:
 | `bus` | bus |
 | `truck` | truck |
 
+The ambiguous-label audit sampled every available split and four box-area
+quartiles for each label:
+
+| Native label | Boxes reviewed | Observed box subject | Mapping decision |
+| --- | ---: | --- | --- |
+| ACDC/BDD100K `rider` | 16 | Human rider, with the box tracking the person | `person` |
+| VisDrone `people` | 12 | Seated, standing, or otherwise visible people | `person` |
+| Udacity `biker` | 12 | Mixed rider-and-cycle geometry | excluded |
+| VisDrone `van` | 12 | Vans and minivans, kept distinct by the source taxonomy | excluded |
+| VisDrone `tricycle` | 12 | Three-wheeled passenger or cargo vehicles | excluded |
+| VisDrone `awning-tricycle` | 12 | Covered three-wheeled vehicles | excluded |
+
 Ambiguous source classes fail closed instead of being forced into a similar
 class. Udacity `biker` and VisDrone `van`, `tricycle`, and `awning-tricycle`
 therefore have no meta label. Rail trains, traffic controls, ignored regions,
