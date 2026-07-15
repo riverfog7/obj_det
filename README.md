@@ -239,16 +239,31 @@ Use `--force` to replace an existing merged output, or override the paths with
 `--input-root` and `--output`. The default output is
 `datasets/merged_traffic6`.
 
-The merge includes ACDC, CARPK, DAWN, ExDark, HazyDet, HazyDet-clear,
-HazyDet-real, Udacity, VisDrone, VOC2007, and XWOD. It omits BDD100K because the
-current Detection 2020 package is unavailable.
+The merge includes all 12 converted sources: ACDC, BDD100K, CARPK, DAWN,
+ExDark, HazyDet, HazyDet-clear, HazyDet-real, Udacity, VisDrone, VOC2007, and
+XWOD. BDD100K contributes its native train and validation splits; the merge
+does not invent a BDD100K test split.
 
-The final classes are `person`, `bicycle`, `motorcycle`, `car`, `bus`, and
-`truck`. The fixed merge policy harmonizes pedestrian/people/rider as person,
-bike as bicycle, motorbike/motor/tricycle/awning-tricycle as motorcycle, and
-van as car. CARPK's numeric `0` label maps to car only within CARPK. All other
-classes, ignored objects, and images left without a retained object are
-removed.
+The dataset YAML `class_map` values are the sole native-to-meta mapping
+authority. The merge retains only converted objects whose `meta_label` is one
+of `person`, `bicycle`, `motorcycle`, `car`, `bus`, or `truck`:
+
+| Final class | Retained native labels |
+| --- | --- |
+| `person` | person, pedestrian, people, rider |
+| `bicycle` | bicycle, bike |
+| `motorcycle` | motorcycle, motorbike, motor |
+| `car` | car, plus CARPK's dataset-scoped numeric `0` |
+| `bus` | bus |
+| `truck` | truck |
+
+Ambiguous source classes fail closed instead of being forced into a similar
+class. Udacity `biker` and VisDrone `van`, `tricycle`, and `awning-tricycle`
+therefore have no meta label. Rail trains, traffic controls, ignored regions,
+and general ExDark/VOC classes outside the six-class space are also excluded.
+These annotations remain available with `meta_label=null` in their individual
+converted datasets, but they are physically absent from the merged artifact.
+Images left without a retained object are removed.
 
 Surviving rows keep their original `train`, `val`, or `test` split. Exact
 duplicates and aligned HazyDet clear/hazy variants are treated as one lineage.
@@ -264,8 +279,9 @@ uv run obj-det models plan run --all configs/plans/merged_traffic6_controlled.ya
 
 The combined source licenses include non-commercial and dataset-specific
 terms, so the script deliberately creates a local artifact and has no upload
-option. Inspect `datasets/merged_traffic6/merge_manifest.json` for source,
-filtering, deduplication, split, class, provenance, and reproducibility counts.
+option. Inspect `datasets/merged_traffic6/merge_manifest.json` for per-dataset
+observed mappings, retained/excluded/ignored label counts, source, filtering,
+deduplication, split, class, provenance, and reproducibility counts.
 
 ## Output columns
 
