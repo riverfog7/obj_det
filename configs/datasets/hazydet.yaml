@@ -33,16 +33,8 @@ splits:
     is_synthetic: true
 
 class_map:
-  pedestrian: person
-  people: person
-  bicycle: bicycle
   car: car
-  van: car
   truck: truck
-  tricycle: motorcycle
-  awning-tricycle: motorcycle
   bus: bus
-  motor: motorcycle
 
 ignore_labels: []
-

@@ -24,7 +24,7 @@ class UdacityConfigTest(unittest.TestCase):
 
         self.assertEqual(cfg.source_format, "coco")
         self.assertEqual(cfg.class_map["pedestrian"], "person")
-        self.assertEqual(cfg.class_map["biker"], "bicycle")
+        self.assertIsNone(cfg.class_map["biker"])
         self.assertEqual(cfg.splits.keys(), {"train", "val", "test"})
         self.assertEqual(
             cfg.meta["split_policy"], "deterministic_80_10_10_timestamp_blocks"

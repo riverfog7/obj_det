@@ -18,13 +18,10 @@ splits:
       annotations: labels/det_20/det_val.json
 
 class_map:
-  pedestrian: person
   person: person
   rider: person
   bike: bicycle
-  bicycle: bicycle
   motor: motorcycle
-  motorcycle: motorcycle
   car: car
   bus: bus
   truck: truck

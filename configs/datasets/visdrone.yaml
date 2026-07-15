@@ -37,10 +37,10 @@ class_map:
   people: person
   bicycle: bicycle
   car: car
-  van: car
+  van:
   truck: truck
-  tricycle: motorcycle
-  awning-tricycle: motorcycle
+  tricycle:
+  awning-tricycle:
   bus: bus
   motor: motorcycle
   ignored_region:

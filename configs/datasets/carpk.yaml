@@ -23,7 +23,6 @@ splits:
 
 class_map:
   "0": car
-  car: car
 
 ignore_labels: []
 

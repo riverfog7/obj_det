@@ -33,6 +33,74 @@ ALL_DATASETS = RUNNABLE_DATASETS | FAIL_CLOSED_DATASETS
 
 
 class DatasetConfigMatrixTest(unittest.TestCase):
+    def test_dataset_class_maps_use_the_audited_traffic6_policy(self):
+        classes = set(
+            yaml.safe_load(
+                Path("configs/class_spaces/traffic6.yaml").read_text(encoding="utf-8")
+            )["classes"]
+        )
+        configs = {
+            path.stem: SourceDatasetConfig.model_validate(
+                yaml.safe_load(path.read_text(encoding="utf-8"))
+            )
+            for path in Path("configs/datasets").glob("*.yaml")
+        }
+
+        for name, cfg in configs.items():
+            with self.subTest(dataset=name):
+                self.assertLessEqual(
+                    {label for label in cfg.class_map.values() if label is not None},
+                    classes,
+                )
+
+        self.assertEqual(
+            set(configs["bdd100k"].class_map),
+            {
+                "person",
+                "rider",
+                "bike",
+                "motor",
+                "car",
+                "bus",
+                "truck",
+                "train",
+                "traffic light",
+                "traffic sign",
+            },
+        )
+        self.assertEqual(configs["carpk"].class_map, {"0": "car"})
+        for name in ("hazydet", "hazydet_clear", "hazydet_real"):
+            self.assertEqual(
+                configs[name].class_map,
+                {"car": "car", "truck": "truck", "bus": "bus"},
+            )
+
+        expected_exclusions = {
+            "exdark": {"Boat", "Bottle", "Cat", "Chair", "Cup", "Dog", "Table"},
+            "udacity": {
+                "biker",
+                "trafficLight",
+                "trafficLight-Green",
+                "trafficLight-GreenLeft",
+                "trafficLight-Red",
+                "trafficLight-RedLeft",
+                "trafficLight-Yellow",
+                "trafficLight-YellowLeft",
+            },
+            "visdrone": {
+                "van",
+                "tricycle",
+                "awning-tricycle",
+                "ignored_region",
+                "others",
+            },
+        }
+        for name, labels in expected_exclusions.items():
+            for label in labels:
+                with self.subTest(dataset=name, label=label):
+                    self.assertIn(label, configs[name].class_map)
+                    self.assertIsNone(configs[name].class_map[label])
+
     def test_all_dataset_configs_and_refs_validate(self):
         dataset_paths = sorted(Path("configs/datasets").glob("*.yaml"))
         ref_paths = sorted(Path("configs/dataset_refs").glob("*.yaml"))

@@ -25,7 +25,7 @@ class_map:
   car: car
   truck: truck
   pedestrian: person
-  biker: bicycle
+  biker:
   trafficLight:
   trafficLight-Green:
   trafficLight-GreenLeft:

@@ -37,17 +37,17 @@ splits:
 
 class_map:
   Bicycle: bicycle
-  Boat: boat
-  Bottle: bottle
+  Boat:
+  Bottle:
   Bus: bus
   Car: car
-  Cat: cat
-  Chair: chair
-  Cup: cup
-  Dog: dog
+  Cat:
+  Chair:
+  Cup:
+  Dog:
   Motorbike: motorcycle
   People: person
-  Table: table
+  Table:
 
 ignore_labels: []
 
