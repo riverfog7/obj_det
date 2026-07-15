@@ -8,10 +8,24 @@ default_is_synthetic: false
 bbox_policy: clip
 
 splits:
-  full:
+  train:
     paths:
-      images: images
-      labels: labels
+      images: splits/train/images
+      labels: splits/train/labels
+    condition: mixed
+    domain: road
+    is_synthetic: false
+  val:
+    paths:
+      images: splits/val/images
+      labels: splits/val/labels
+    condition: mixed
+    domain: road
+    is_synthetic: false
+  test:
+    paths:
+      images: splits/test/images
+      labels: splits/test/labels
     condition: mixed
     domain: road
     is_synthetic: false
@@ -41,3 +55,5 @@ ignore_labels: []
 meta:
   license: CC-BY-NC-SA-4.0
   homepage: https://www.kaggle.com/datasets/shuvoalok/dawn-dataset
+  split_policy: deterministic_80_10_10_content_grouped
+  split_policy_note: project-defined; the source archive has no official splits

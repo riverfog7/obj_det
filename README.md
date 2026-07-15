@@ -97,7 +97,7 @@ The repository contains 13 source configs and matching dataset refs:
 | `bdd100k` | BDD100K Scalabel JSON | train, val | no: public test labels unavailable |
 | `carpk` | COCO | train, val, test | yes |
 | `cityscapes` | Cityscapes polygons | train, val | no: public test labels unavailable |
-| `dawn` | YOLO without YAML | full | no: validation/test splits unavailable |
+| `dawn` | YOLO without YAML | train, val, test | yes: project-defined split |
 | `exdark` | ExDark | train, val, test | yes |
 | `hazydet` | YOLO | train, val, test | yes |
 | `hazydet_clear` | YOLO | train, val, test | yes |
@@ -148,11 +148,10 @@ Split path keys depend on the source format:
 - `yolo_noyml` configs use `images` and `labels`; class names come from `class_names`.
 - ExDark configs use `images`, `annotations`, and `imageclasslist`.
 
-DAWN currently has one source split:
-
-```text
-full
-```
+The DAWN archive is an unsplit image pool. `scripts/download.sh dawn` creates a
+deterministic 80/10/10 train/validation/test split. Byte-identical images stay
+in the same split to avoid direct duplicate leakage. This is a project-defined
+split, not an official DAWN benchmark split.
 
 ExDark uses the official `train`, `val`, and `test` split ids from
 `imageclasslist.txt`. Upstream marks ExDark as non-commercial research use.

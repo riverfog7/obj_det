@@ -90,6 +90,7 @@ download_dawn() {
 
     echo "Downloading and extracting DAWN..."
     uv tool run kaggle datasets download shuvoalok/dawn-dataset --unzip -p "$path"
+    uv run python scripts/prepare_dawn.py "$path"
 }
 
 download_exdark() {

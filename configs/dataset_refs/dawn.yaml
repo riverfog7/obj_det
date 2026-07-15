@@ -1,9 +1,6 @@
 key: dawn
 path: datasets/dawn
-train_split: full
+train_split: train
 val_split: val
 test_split: test
 default_class_space: traffic6
-meta:
-  controlled_plan_enabled: false
-  controlled_plan_blocker: missing_validation_and_test_splits

@@ -13,6 +13,7 @@ from obj_det.models.schemas import DatasetRefConfig
 
 RUNNABLE_DATASETS = {
     "carpk",
+    "dawn",
     "exdark",
     "hazydet",
     "hazydet_clear",
@@ -25,7 +26,6 @@ FAIL_CLOSED_DATASETS = {
     "acdc",
     "bdd100k",
     "cityscapes",
-    "dawn",
     "hazydet_real",
 }
 ALL_DATASETS = RUNNABLE_DATASETS | FAIL_CLOSED_DATASETS
@@ -105,7 +105,7 @@ class DatasetConfigMatrixTest(unittest.TestCase):
             else:
                 self.assertEqual(current, baseline)
 
-        self.assertEqual(total_experiments, 200)
+        self.assertEqual(total_experiments, 225)
 
 
 if __name__ == "__main__":
