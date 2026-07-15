@@ -57,8 +57,7 @@ bash scripts/download.sh --force voc2007
 Available download keys are `acdc`, `bdd100k`, `carpk`, `dawn`, `exdark`,
 `hazydet`, `udacity`, `visdrone`, `voc2007`, and `xwod`. The helper uses the
 official or upstream distribution path for each dataset. Hugging Face, Google
-Drive, Kaggle, and Roboflow commands may require their normal local
-authentication.
+Drive, and Roboflow commands may require their normal local authentication.
 
 BDD100K is downloaded through its portal. Point the helper at the two staged
 official archives:
@@ -69,8 +68,8 @@ export BDD100K_LABELS_ARCHIVE=/downloads/bdd100k_det_20_labels_trainval.zip
 bash scripts/download.sh bdd100k
 ```
 
-ACDC, CARPK, Udacity, and Pascal VOC use their public upstream package
-endpoints.
+ACDC, CARPK, and Pascal VOC use their public upstream package endpoints.
+Udacity uses the public Kaggle mirror of Roboflow's v3 fixed-small export.
 
 Every configured model input is one ordinary RGB image and every target is a
 list of 2D objects. nuScenes is intentionally not supported because its native
@@ -98,7 +97,7 @@ locally merged dataset:
 | `hazydet` | YOLO | train, val, test | yes |
 | `hazydet_clear` | YOLO | train, val, test | yes |
 | `hazydet_real` | YOLO | train, test | no: validation split unavailable |
-| `udacity` | COCO | train, val, test | yes |
+| `udacity` | TensorFlow CSV normalized to COCO | train, val, test | yes: project-defined split |
 | `visdrone` | VisDrone detection TXT | train, val, test | yes |
 | `voc2007` | Pascal VOC XML | train, val, test | yes |
 | `xwod` | YOLO | train, val, test | yes |
@@ -148,6 +147,12 @@ The DAWN archive is an unsplit image pool. `scripts/download.sh dawn` creates a
 deterministic 80/10/10 train/validation/test split. Byte-identical images stay
 in the same split to avoid direct duplicate leakage. This is a project-defined
 split, not an official DAWN benchmark split.
+
+The Kaggle Udacity archive combines the 15,000-image v3 export with an older
+14,800-image export. `scripts/download.sh udacity` uses only v3 and creates a
+deterministic 80/10/10 split. Frames in the same one-minute timestamp block stay
+together to limit temporal leakage. This is a project-defined split because the
+Kaggle TensorFlow export does not preserve an upstream split assignment.
 
 ExDark uses the official `train`, `val`, and `test` split ids from
 `imageclasslist.txt`. Upstream marks ExDark as non-commercial research use.
@@ -235,9 +240,8 @@ Use `--force` to replace an existing merged output, or override the paths with
 `datasets/merged_traffic6`.
 
 The merge includes ACDC, CARPK, DAWN, ExDark, HazyDet, HazyDet-clear,
-HazyDet-real, VisDrone, VOC2007, and XWOD. It omits BDD100K because the current
-Detection 2020 package is unavailable and Udacity because the obtainable source
-does not carry an authoritative train/validation/test assignment.
+HazyDet-real, Udacity, VisDrone, VOC2007, and XWOD. It omits BDD100K because the
+current Detection 2020 package is unavailable.
 
 The final classes are `person`, `bicycle`, `motorcycle`, `car`, `bus`, and
 `truck`. The fixed merge policy harmonizes pedestrian/people/rider as person,

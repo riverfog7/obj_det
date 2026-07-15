@@ -26,6 +26,9 @@ class UdacityConfigTest(unittest.TestCase):
         self.assertEqual(cfg.class_map["pedestrian"], "person")
         self.assertEqual(cfg.class_map["biker"], "bicycle")
         self.assertEqual(cfg.splits.keys(), {"train", "val", "test"})
+        self.assertEqual(
+            cfg.meta["split_policy"], "deterministic_80_10_10_timestamp_blocks"
+        )
         self.assertEqual(ref.path, Path("datasets/udacity"))
         self.assertEqual(len(experiments), 25)
         self.assertTrue(all(exp.dataset.path == ref.path for exp in experiments))

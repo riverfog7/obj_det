@@ -29,6 +29,7 @@ SOURCE_DATASETS = (
     "hazydet",
     "hazydet_clear",
     "hazydet_real",
+    "udacity",
     "visdrone",
     "voc2007",
     "xwod",
@@ -36,10 +37,6 @@ SOURCE_DATASETS = (
 
 OMITTED_DATASETS = {
     "bdd100k": "The current Detection 2020 source package is unavailable.",
-    "udacity": (
-        "The obtainable raw mirror has no upstream train/val/test assignment and "
-        "does not match the configured split-preserving COCO export."
-    ),
 }
 
 FINAL_CLASSES = (

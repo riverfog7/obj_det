@@ -362,6 +362,15 @@ class MergeDatasetsTest(unittest.TestCase):
                         color=(6, 0, 0),
                     )
                 ],
+                "udacity": [
+                    _row(
+                        "udacity",
+                        "val",
+                        "udacity:val:1",
+                        ["car"],
+                        color=(10, 0, 0),
+                    )
+                ],
                 "visdrone": [
                     _row(
                         "visdrone",
@@ -397,12 +406,12 @@ class MergeDatasetsTest(unittest.TestCase):
             merged = load_from_disk(str(output))
 
             self.assertEqual(list(merged), ["train", "val", "test"])
-            self.assertEqual(first_manifest["output"]["rows"], 8)
+            self.assertEqual(first_manifest["output"]["rows"], 9)
             self.assertEqual(
                 first_manifest["output"]["splits"],
                 {
                     "train": 4,
-                    "val": 2,
+                    "val": 3,
                     "test": 2,
                 },
             )
@@ -410,7 +419,6 @@ class MergeDatasetsTest(unittest.TestCase):
                 set(first_manifest["omitted_datasets"]),
                 {
                     "bdd100k",
-                    "udacity",
                 },
             )
             all_rows = [row for split in merged.values() for row in split]

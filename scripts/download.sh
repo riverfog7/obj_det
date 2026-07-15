@@ -202,12 +202,15 @@ download_carpk() {
 download_udacity() {
     local path
     path="$(dataset_path udacity)"
+    local archive="$path/udacity-kaggle.zip"
 
-    echo "Downloading Udacity self-driving COCO export from Roboflow..."
-    uv tool run roboflow download \
-        -f coco \
-        -l "$path" \
-        roboflow-gw7yv/self-driving-car/3
+    echo "Downloading Udacity self-driving dataset from Kaggle..."
+    curl -LfsS --retry 5 \
+        https://www.kaggle.com/api/v1/datasets/download/sshikamaru/udacity-self-driving-car-dataset \
+        -o "$archive"
+    unzip -q "$archive" -d "$path"
+    rm "$archive"
+    uv run python scripts/prepare_udacity.py "$path"
 }
 
 is_available_dataset() {

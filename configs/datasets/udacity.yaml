@@ -37,7 +37,9 @@ class_map:
 ignore_labels: []
 
 meta:
-  homepage: https://universe.roboflow.com/roboflow-gw7yv/self-driving-car
+  homepage: https://www.kaggle.com/datasets/sshikamaru/udacity-self-driving-car-dataset
   license: MIT
   export_version: 3
   preprocessing: resized_to_512x512
+  split_policy: deterministic_80_10_10_timestamp_blocks
+  split_policy_note: project-defined; the Kaggle TensorFlow export has no split assignment
