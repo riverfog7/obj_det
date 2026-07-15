@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import random
 from typing import Any
 
+import numpy as np
 import torch
 
 from obj_det.models.schemas.config import DataLoaderConfig
@@ -34,3 +36,10 @@ def seed_worker_transform(transform) -> None:
     if hasattr(transform, "set_seed"):
         transform.set_seed(seed)
     transform._obj_det_worker_seed = seed
+
+
+def seed_dataloader_worker(worker_id: int) -> None:
+    del worker_id
+    seed = torch.initial_seed() % (2**32)
+    random.seed(seed)
+    np.random.seed(seed)

@@ -57,7 +57,7 @@ class HFTrainerDetectionAdapter(BaseModelAdapter):
         except ImportError as exc:
             raise ImportError("Install the models extra to use backend='hf_trainer'.") from exc
 
-        set_seed(train_cfg.seed)
+        set_seed(train_cfg.seed, deterministic=True)
         train_cfg.output_dir.mkdir(parents=True, exist_ok=True)
 
         processor = AutoImageProcessor.from_pretrained(
@@ -248,6 +248,7 @@ class HFTrainerDetectionAdapter(BaseModelAdapter):
                 "detector_pretraining_dataset": self.cfg.detector_pretraining_dataset,
                 "backbone_pretraining_allowed": True,
                 "class_head_reinitialized": True,
+                "deterministic": True,
                 "weight_source": "raw",
                 "ema_enabled": False,
                 "max_grad_norm": MAX_GRAD_NORM,
@@ -394,6 +395,7 @@ class HFTrainerDetectionAdapter(BaseModelAdapter):
             lr_scheduler_type="constant",
             max_grad_norm=MAX_GRAD_NORM,
             seed=train_cfg.seed,
+            data_seed=train_cfg.seed,
             fp16=bool(train_cfg.amp and torch.cuda.is_available()),
             eval_strategy="no",
             save_strategy=save_strategy,

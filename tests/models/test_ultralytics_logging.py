@@ -11,6 +11,7 @@ import torch
 from datasets import Dataset
 
 from obj_det.models.adapters.ultralytics import _NoOpEpochScheduler, UltralyticsDetectionAdapter
+from obj_det.models.data.loader import seed_dataloader_worker
 from obj_det.models.schemas import DataLoaderConfig, EvalConfig, ModelConfig, PredictConfig, PreprocessConfig, TrainConfig
 from obj_det.models.schemas.artifact import ModelArtifact
 from obj_det.models.training import CheckpointState, MAX_GRAD_NORM
@@ -109,6 +110,7 @@ class UltralyticsLoggingTest(unittest.TestCase):
             logger=None,
             log_prefix="train",
             logging_steps=100,
+            seed=17,
         )
 
         train_loader = trainer.get_dataloader("unused", batch_size=1, mode="train")
@@ -116,6 +118,8 @@ class UltralyticsLoggingTest(unittest.TestCase):
 
         self.assertIs(train_loader.dataset.transform, train_transform)
         self.assertIs(val_loader.dataset.transform, eval_transform)
+        self.assertEqual(train_loader.generator.initial_seed(), 17)
+        self.assertIs(train_loader.worker_init_fn, seed_dataloader_worker)
 
     def test_custom_trainer_returns_empty_validation_loader_without_val_source(self):
         adapter = UltralyticsDetectionAdapter(
@@ -266,6 +270,7 @@ class UltralyticsLoggingTest(unittest.TestCase):
                     "patience": 99,
                     "nbs": 64,
                     "freeze": 10,
+                    "deterministic": False,
                 }
             },
         )
@@ -283,6 +288,7 @@ class UltralyticsLoggingTest(unittest.TestCase):
         self.assertEqual(overrides["patience"], 0)
         self.assertEqual(overrides["nbs"], cfg.batch_size)
         self.assertEqual(overrides["freeze"], 0)
+        self.assertTrue(overrides["deterministic"])
 
     def test_optimizer_rejects_a_frozen_backbone(self):
         adapter = UltralyticsDetectionAdapter(
@@ -633,6 +639,7 @@ class UltralyticsLoggingTest(unittest.TestCase):
         self.assertEqual(artifact.meta["detector_pretraining_dataset"], "coco")
         self.assertTrue(artifact.meta["backbone_pretraining_allowed"])
         self.assertTrue(artifact.meta["class_head_reinitialized"])
+        self.assertTrue(artifact.meta["deterministic"])
 
 
 if __name__ == "__main__":

@@ -210,7 +210,10 @@ class TorchvisionAdapterTest(unittest.TestCase):
             hparams={"max_grad_norm": 99.0},
         )
 
-        self.assertEqual(self._adapter("fasterrcnn_resnet50_fpn")._training_args(cfg).max_grad_norm, MAX_GRAD_NORM)
+        args = self._adapter("fasterrcnn_resnet50_fpn")._training_args(cfg)
+
+        self.assertEqual(args.max_grad_norm, MAX_GRAD_NORM)
+        self.assertEqual(args.data_seed, cfg.seed)
 
 
 if __name__ == "__main__":

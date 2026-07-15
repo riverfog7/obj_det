@@ -12,7 +12,7 @@ from datasets import Dataset
 from torch.utils.data import DataLoader
 
 from obj_det.models.adapters.base import BaseModelAdapter
-from obj_det.models.data.loader import dataloader_kwargs
+from obj_det.models.data.loader import dataloader_kwargs, seed_dataloader_worker
 from obj_det.models.data.row_parser import HFDetectionRowParser
 from obj_det.models.data.row_batches import iter_hf_row_batches
 from obj_det.models.data.sample_source import DetectionSampleSource
@@ -86,7 +86,7 @@ class UltralyticsDetectionAdapter(BaseModelAdapter):
                 stacklevel=2,
             )
 
-        set_seed(train_cfg.seed)
+        set_seed(train_cfg.seed, deterministic=True)
         train_cfg.output_dir.mkdir(parents=True, exist_ok=True)
         parser = HFDetectionRowParser(
             classes=train_cfg.classes,
@@ -118,6 +118,7 @@ class UltralyticsDetectionAdapter(BaseModelAdapter):
             logger=logger,
             log_prefix=log_prefix,
             logging_steps=train_cfg.logging_steps,
+            seed=train_cfg.seed,
             stop_after_epochs=int(train_cfg.max_epochs or train_cfg.scheduler.total_epochs),
             optimizer_cfg=train_cfg.optimizer,
             scheduler_cfg=train_cfg.scheduler,
@@ -253,6 +254,7 @@ class UltralyticsDetectionAdapter(BaseModelAdapter):
             "patience": 0,
             "nbs": int(train_cfg.batch_size),
             "freeze": 0,
+            "deterministic": True,
         }
         overrides.update(train_cfg.backend_params.get("overrides", {}))
         overrides.update(
@@ -268,6 +270,7 @@ class UltralyticsDetectionAdapter(BaseModelAdapter):
                 "patience": 0,
                 "nbs": int(train_cfg.batch_size),
                 "freeze": 0,
+                "deterministic": True,
             }
         )
         overrides.update(_CONTROLLED_AUG_OFF)
@@ -327,6 +330,7 @@ class UltralyticsDetectionAdapter(BaseModelAdapter):
             "detector_pretraining_dataset": self.cfg.detector_pretraining_dataset,
             "backbone_pretraining_allowed": True,
             "class_head_reinitialized": True,
+            "deterministic": True,
             "weight_source": "raw",
             "ema_enabled": False,
             "max_grad_norm": MAX_GRAD_NORM,
@@ -374,6 +378,7 @@ class UltralyticsDetectionAdapter(BaseModelAdapter):
                 logger,
                 log_prefix,
                 logging_steps,
+                seed=0,
                 stop_after_epochs=1,
                 optimizer_cfg=None,
                 scheduler_cfg=None,
@@ -397,6 +402,7 @@ class UltralyticsDetectionAdapter(BaseModelAdapter):
                 self._hf_logger = logger
                 self._hf_log_prefix = log_prefix
                 self._hf_logging_steps = logging_steps
+                self._protocol_seed = seed
                 self._protocol_stop_after_epochs = stop_after_epochs
                 self._protocol_optimizer_cfg = optimizer_cfg
                 self._protocol_scheduler_cfg = scheduler_cfg
@@ -463,6 +469,10 @@ class UltralyticsDetectionAdapter(BaseModelAdapter):
                 }
 
             def get_dataloader(self, dataset_path: str, batch_size: int = 16, rank: int = 0, mode: str = "train"):
+                seed_kwargs = {
+                    "generator": torch.Generator().manual_seed(self._protocol_seed),
+                    "worker_init_fn": seed_dataloader_worker,
+                }
                 if mode == "train":
                     source = self._hf_train_source
                     transform = self._hf_train_transform
@@ -475,6 +485,7 @@ class UltralyticsDetectionAdapter(BaseModelAdapter):
                             batch_size=batch_size,
                             shuffle=False,
                             collate_fn=ultralytics_detection_collate,
+                            **seed_kwargs,
                             **dataloader_kwargs(self._hf_loader_cfg),
                         )
 
@@ -489,6 +500,7 @@ class UltralyticsDetectionAdapter(BaseModelAdapter):
                     batch_size=batch_size,
                     shuffle=mode == "train",
                     collate_fn=ultralytics_detection_collate,
+                    **seed_kwargs,
                     **dataloader_kwargs(self._hf_loader_cfg),
                 )
 

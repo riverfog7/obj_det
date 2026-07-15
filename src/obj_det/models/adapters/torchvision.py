@@ -114,7 +114,7 @@ class TorchvisionDetectionAdapter(BaseModelAdapter):
     ) -> ModelArtifact:
         require_single_process(context="Controlled TorchVision training")
         self._require_model_preprocess(train_cfg.preprocess)
-        set_seed(train_cfg.seed)
+        set_seed(train_cfg.seed, deterministic=True)
         train_cfg.output_dir.mkdir(parents=True, exist_ok=True)
 
         spec = self._model_spec()
@@ -266,6 +266,7 @@ class TorchvisionDetectionAdapter(BaseModelAdapter):
                 "weight_source": "raw",
                 "ema_enabled": False,
                 "max_grad_norm": MAX_GRAD_NORM,
+                "deterministic": True,
                 "optimizer": optimizer_meta,
                 "scheduler": scheduler_meta,
                 **checkpoint_state.artifact_meta(),
@@ -568,6 +569,7 @@ class TorchvisionDetectionAdapter(BaseModelAdapter):
             lr_scheduler_type="constant",
             max_grad_norm=MAX_GRAD_NORM,
             seed=train_cfg.seed,
+            data_seed=train_cfg.seed,
             fp16=bool(train_cfg.amp and torch.cuda.is_available()),
             eval_strategy="no",
             save_strategy="no",

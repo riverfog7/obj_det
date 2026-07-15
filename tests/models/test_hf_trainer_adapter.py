@@ -37,6 +37,7 @@ class HFTrainerAdapterTest(unittest.TestCase):
         self.assertEqual(str(args.save_strategy), "SaveStrategy.EPOCH")
         self.assertFalse(args.load_best_model_at_end)
         self.assertEqual(args.max_grad_norm, MAX_GRAD_NORM)
+        self.assertEqual(args.data_seed, cfg.seed)
 
     def test_gradient_clipping_cannot_be_overridden_by_hparams(self):
         cfg = TrainConfig(

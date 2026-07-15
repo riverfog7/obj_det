@@ -25,6 +25,12 @@ class BoundaryTest(unittest.TestCase):
         self.assertIn("eval_transform = build_detection_transform(train_cfg.preprocess)", tv_text)
         self.assertIn("eval_dataset=_TorchvisionTrainerDataset(val_source, eval_transform, spec)", tv_text)
 
+    def test_all_training_adapters_enable_deterministic_execution(self):
+        for name in ["hf_trainer.py", "torchvision.py", "ultralytics.py"]:
+            with self.subTest(adapter=name):
+                text = (pathlib.Path("src/obj_det/models/adapters") / name).read_text()
+                self.assertIn("set_seed(train_cfg.seed, deterministic=True)", text)
+
     def test_ultralytics_train_time_eval_is_warn_only(self):
         text = pathlib.Path("src/obj_det/models/adapters/ultralytics.py").read_text()
 
