@@ -5,25 +5,31 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from typing import Any
 
+import yaml
 from datasets import Dataset, DatasetDict, load_from_disk
 from PIL import Image
 
 from obj_det.datasets.converters.hf import HF_FEATURES
+from obj_det.models.data.row_parser import HFDetectionRowParser
 from scripts.merge_datasets import (
     FINAL_CLASSES,
     MergedRow,
+    OMITTED_DATASETS,
     RowRef,
     SOURCE_DATASETS,
     UnionFind,
     build_output_row,
-    canonical_label,
     filter_objects,
     load_sources,
     merge_datasets,
     plan_merge,
     validate_bbox,
 )
+
+
+_DEFAULT_META_LABEL = object()
 
 
 def _image_bytes(color: tuple[int, int, int], size: tuple[int, int] = (8, 8)) -> bytes:
@@ -37,12 +43,15 @@ def _object(
     *,
     bbox: list[float] | None = None,
     ignore: bool = False,
+    meta_label: str | None | object = _DEFAULT_META_LABEL,
 ) -> dict[str, object]:
+    if meta_label is _DEFAULT_META_LABEL:
+        meta_label = label.lower()
     return {
         "bbox": bbox or [1.0, 1.0, 3.0, 3.0],
         "native_label": label,
         "native_label_id": label,
-        "meta_label": label.lower(),
+        "meta_label": meta_label,
         "ignore": ignore,
         "iscrowd": False,
         "meta_json": json.dumps({"source": "test"}),
@@ -59,6 +68,7 @@ def _row(
     data: bytes | None = None,
     source_image_id: int | None = None,
     size: tuple[int, int] = (8, 8),
+    meta_labels: list[str | None] | None = None,
 ) -> dict[str, object]:
     width, height = size
     meta = {
@@ -82,7 +92,15 @@ def _row(
         "condition": "clear",
         "domain": "road",
         "is_synthetic": False,
-        "objects": [_object(label) for label in labels],
+        "objects": [
+            _object(
+                label,
+                meta_label=(
+                    _DEFAULT_META_LABEL if meta_labels is None else meta_labels[index]
+                ),
+            )
+            for index, label in enumerate(labels)
+        ],
         "meta_json": json.dumps(meta),
     }
 
@@ -130,32 +148,36 @@ def _ref(
 
 
 class MergeDatasetsTest(unittest.TestCase):
-    def test_canonical_label_aliases_and_dataset_specific_numeric_label(self):
-        expected = {
-            "person": "person",
-            "people": "person",
-            "pedestrian": "person",
-            "rider": "person",
-            "bicycle": "bicycle",
-            "bike": "bicycle",
-            "motorcycle": "motorcycle",
-            "motorbike": "motorcycle",
-            "motor": "motorcycle",
-            "tricycle": "motorcycle",
-            "awning-tricycle": "motorcycle",
-            "car": "car",
-            "van": "car",
-            "bus": "bus",
-            "truck": "truck",
+    def test_merge_catalog_and_final_classes_match_repo_configs(self):
+        dataset_keys = {
+            path.stem for path in Path("configs/datasets").glob("*.yaml")
         }
-        for native_label, canonical in expected.items():
-            with self.subTest(native_label=native_label):
-                self.assertEqual(
-                    canonical_label("visdrone", native_label.upper()), canonical
-                )
-        self.assertEqual(canonical_label("carpk", "0"), "car")
-        self.assertIsNone(canonical_label("visdrone", "0"))
-        self.assertIsNone(canonical_label("voc2007", "train"))
+        self.assertEqual(set(SOURCE_DATASETS) | set(OMITTED_DATASETS), dataset_keys)
+        self.assertFalse(set(SOURCE_DATASETS) & set(OMITTED_DATASETS))
+        self.assertEqual(OMITTED_DATASETS, {})
+
+        class_space = yaml.safe_load(
+            Path("configs/class_spaces/traffic6.yaml").read_text(encoding="utf-8")
+        )
+        self.assertEqual(list(FINAL_CLASSES), class_space["classes"])
+
+    def test_filter_objects_uses_converted_meta_labels_without_remapping(self):
+        row = _row("udacity", "train", "sample", [])
+        row["objects"] = [
+            _object("biker", meta_label=None),
+            _object("not-a-car", meta_label="car"),
+            _object("car", meta_label="boat"),
+            _object("bus", meta_label="bus", ignore=True),
+        ]
+
+        filtered = filter_objects(row, "udacity")
+
+        self.assertEqual(filtered.total, 4)
+        self.assertEqual(filtered.ignored, 1)
+        self.assertEqual(filtered.excluded, 2)
+        self.assertEqual(len(filtered.objects), 1)
+        self.assertEqual(filtered.objects[0]["native_label"], "not-a-car")
+        self.assertEqual(filtered.objects[0]["meta_label"], "car")
 
     def test_filter_objects_removes_ignored_and_excluded_classes(self):
         row = _row("exdark", "train", "sample", [])
@@ -324,14 +346,32 @@ class MergeDatasetsTest(unittest.TestCase):
             output = root / "merged"
             input_root.mkdir()
             shared = _image_bytes((255, 0, 0))
-            rows = {
+            rows: dict[str, list[dict[str, Any]]] = {
                 "acdc": [_row("acdc", "train", "acdc:train:1", ["car"], data=shared)],
-                "carpk": [_row("carpk", "test", "carpk:test:1", ["0"], data=shared)],
+                "bdd100k": [
+                    _row(
+                        "bdd100k",
+                        "train",
+                        "bdd100k:train:1",
+                        ["person"],
+                        color=(11, 0, 0),
+                    )
+                ],
+                "carpk": [
+                    _row(
+                        "carpk",
+                        "test",
+                        "carpk:test:1",
+                        ["0"],
+                        data=shared,
+                        meta_labels=["car"],
+                    )
+                ],
                 "dawn": [
                     _row("dawn", "val", "dawn:val:1", ["bus"], color=(2, 0, 0))
                 ],
                 "exdark": [
-                    _row("exdark", "train", "exdark:train:1", ["dog"], color=(3, 0, 0))
+                    _row("exdark", "train", "exdark:train:1", [], color=(3, 0, 0))
                 ],
                 "hazydet": [
                     _row(
@@ -399,6 +439,10 @@ class MergeDatasetsTest(unittest.TestCase):
                     )
                 ],
             }
+            rows["exdark"][0]["objects"] = [
+                _object("Dog", meta_label=None),
+                _object("Bus", meta_label="bus", ignore=True),
+            ]
             for name in SOURCE_DATASETS:
                 _dataset_dict(rows[name]).save_to_disk(input_root / name)
 
@@ -406,20 +450,35 @@ class MergeDatasetsTest(unittest.TestCase):
             merged = load_from_disk(str(output))
 
             self.assertEqual(list(merged), ["train", "val", "test"])
-            self.assertEqual(first_manifest["output"]["rows"], 9)
+            self.assertEqual(first_manifest["schema_version"], 2)
+            self.assertEqual(first_manifest["included_datasets"], list(SOURCE_DATASETS))
+            self.assertEqual(first_manifest["omitted_datasets"], {})
+            self.assertEqual(
+                first_manifest["class_selection"]["mapping_source"],
+                "converted_meta_label",
+            )
+            self.assertEqual(first_manifest["output"]["rows"], 10)
             self.assertEqual(
                 first_manifest["output"]["splits"],
                 {
-                    "train": 4,
+                    "train": 5,
                     "val": 3,
                     "test": 2,
                 },
             )
+            exdark_stats = first_manifest["input"]["datasets"]["exdark"]
             self.assertEqual(
-                set(first_manifest["omitted_datasets"]),
-                {
-                    "bdd100k",
-                },
+                exdark_stats["observed_mappings"],
+                [
+                    {"native_label": "Bus", "meta_label": "bus", "objects": 1},
+                    {"native_label": "Dog", "meta_label": None, "objects": 1},
+                ],
+            )
+            self.assertEqual(exdark_stats["excluded_native_label_counts"], {"Dog": 1})
+            self.assertEqual(exdark_stats["ignored_native_label_counts"], {"Bus": 1})
+            self.assertEqual(
+                exdark_stats["retained_class_counts"],
+                {name: 0 for name in FINAL_CLASSES},
             )
             all_rows = [row for split in merged.values() for row in split]
             self.assertNotIn("acdc:train:1", {row["image_id"] for row in all_rows})
@@ -431,6 +490,15 @@ class MergeDatasetsTest(unittest.TestCase):
                     for obj in row["objects"]
                 )
             )
+            parser = HFDetectionRowParser(
+                classes=list(FINAL_CLASSES), label_mode="meta"
+            )
+            for row in all_rows:
+                parsed = parser.parse_targets_only(row)
+                self.assertEqual(
+                    [target.label_id for target in parsed.targets],
+                    [list(FINAL_CLASSES).index(target.label) for target in parsed.targets],
+                )
             hazy_rows = [
                 row
                 for row in all_rows

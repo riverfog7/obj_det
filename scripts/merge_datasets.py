@@ -23,6 +23,7 @@ logger = logging.getLogger(__name__)
 
 SOURCE_DATASETS = (
     "acdc",
+    "bdd100k",
     "carpk",
     "dawn",
     "exdark",
@@ -35,9 +36,7 @@ SOURCE_DATASETS = (
     "xwod",
 )
 
-OMITTED_DATASETS = {
-    "bdd100k": "The current Detection 2020 source package is unavailable.",
-}
+OMITTED_DATASETS: dict[str, str] = {}
 
 FINAL_CLASSES = (
     "person",
@@ -47,24 +46,6 @@ FINAL_CLASSES = (
     "bus",
     "truck",
 )
-
-LABEL_ALIASES = {
-    "person": "person",
-    "people": "person",
-    "pedestrian": "person",
-    "rider": "person",
-    "bicycle": "bicycle",
-    "bike": "bicycle",
-    "motorcycle": "motorcycle",
-    "motorbike": "motorcycle",
-    "motor": "motorcycle",
-    "tricycle": "motorcycle",
-    "awning-tricycle": "motorcycle",
-    "car": "car",
-    "van": "car",
-    "bus": "bus",
-    "truck": "truck",
-}
 
 OUTPUT_SPLITS = ("train", "val", "test")
 SOURCE_SPLITS = OUTPUT_SPLITS
@@ -143,13 +124,6 @@ class UnionFind:
         self.parent[right_root] = left_root
         if self.rank[left_root] == self.rank[right_root]:
             self.rank[left_root] += 1
-
-
-def canonical_label(dataset: str, native_label: Any) -> str | None:
-    label = str(native_label).strip().casefold()
-    if dataset == "carpk" and label == "0":
-        return "car"
-    return LABEL_ALIASES.get(label)
 
 
 def parse_json(value: Any, *, context: str) -> dict[str, Any]:
@@ -251,8 +225,8 @@ def filter_objects(
         if bool(obj.get("ignore", False)):
             ignored += 1
             continue
-        meta_label = canonical_label(dataset, obj.get("native_label", ""))
-        if meta_label is None:
+        meta_label = obj.get("meta_label")
+        if meta_label not in FINAL_CLASSES:
             excluded += 1
             continue
         context = f"{dataset}/{row['split']}/{row['image_id']} object {object_index}"
@@ -362,6 +336,11 @@ def scan_sources(
     totals: Counter[str] = Counter()
     input_classes: Counter[str] = Counter()
     per_dataset: dict[str, Counter[str]] = {name: Counter() for name in SOURCE_DATASETS}
+    native_label_counts = {name: Counter() for name in SOURCE_DATASETS}
+    observed_mappings = {name: Counter() for name in SOURCE_DATASETS}
+    retained_class_counts = {name: Counter() for name in SOURCE_DATASETS}
+    excluded_native_label_counts = {name: Counter() for name in SOURCE_DATASETS}
+    ignored_native_label_counts = {name: Counter() for name in SOURCE_DATASETS}
     source_metadata: dict[str, dict[str, set[str]]] = {
         name: defaultdict(set) for name in SOURCE_DATASETS
     }
@@ -384,6 +363,24 @@ def scan_sources(
                         f"Split field mismatch in {dataset_name}/{split}/{index}: "
                         f"{row['split']!r}"
                     )
+
+                source_objects = row.get("objects") or []
+                for obj in source_objects:
+                    native_label = str(obj.get("native_label", ""))
+                    raw_meta_label = obj.get("meta_label")
+                    meta_label = (
+                        None
+                        if raw_meta_label in (None, "")
+                        else str(raw_meta_label)
+                    )
+                    native_label_counts[dataset_name][native_label] += 1
+                    observed_mappings[dataset_name][(native_label, meta_label)] += 1
+                    if bool(obj.get("ignore", False)):
+                        ignored_native_label_counts[dataset_name][native_label] += 1
+                    elif meta_label in FINAL_CLASSES:
+                        retained_class_counts[dataset_name][meta_label] += 1
+                    else:
+                        excluded_native_label_counts[dataset_name][native_label] += 1
 
                 filtered = filter_objects(row, dataset_name)
                 object_classes = Counter(obj["meta_label"] for obj in filtered.objects)
@@ -459,6 +456,11 @@ def scan_sources(
             "totals": totals,
             "classes": input_classes,
             "per_dataset": per_dataset,
+            "native_label_counts": native_label_counts,
+            "observed_mappings": observed_mappings,
+            "retained_class_counts": retained_class_counts,
+            "excluded_native_label_counts": excluded_native_label_counts,
+            "ignored_native_label_counts": ignored_native_label_counts,
             "source_metadata": source_metadata,
         },
     )
@@ -744,6 +746,33 @@ def build_manifest(
             "rows_without_final_objects_before_enrichment": counters[
                 "rows_without_final_objects_before_enrichment"
             ],
+            "native_label_counts": dict(
+                sorted(scan_stats["native_label_counts"][name].items())
+            ),
+            "observed_mappings": [
+                {
+                    "native_label": native_label,
+                    "meta_label": meta_label,
+                    "objects": count,
+                }
+                for (native_label, meta_label), count in sorted(
+                    scan_stats["observed_mappings"][name].items(),
+                    key=lambda item: (
+                        item[0][0],
+                        "" if item[0][1] is None else item[0][1],
+                    ),
+                )
+            ],
+            "retained_class_counts": {
+                class_name: scan_stats["retained_class_counts"][name][class_name]
+                for class_name in FINAL_CLASSES
+            },
+            "excluded_native_label_counts": dict(
+                sorted(scan_stats["excluded_native_label_counts"][name].items())
+            ),
+            "ignored_native_label_counts": dict(
+                sorted(scan_stats["ignored_native_label_counts"][name].items())
+            ),
             "metadata": {
                 key: sorted(values)
                 for key, values in scan_stats["source_metadata"][name].items()
@@ -752,15 +781,14 @@ def build_manifest(
 
     totals: Counter[str] = scan_stats["totals"]
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "included_datasets": list(SOURCE_DATASETS),
         "omitted_datasets": OMITTED_DATASETS,
         "class_selection": {
             "minimum_independent_source_families": 5,
             "hazy_variants_count_as_one_family": True,
             "final_classes": list(FINAL_CLASSES),
-            "aliases": LABEL_ALIASES,
-            "dataset_specific_aliases": {"carpk": {"0": "car"}},
+            "mapping_source": "converted_meta_label",
         },
         "split_policy": {
             "preserved_splits": list(OUTPUT_SPLITS),
