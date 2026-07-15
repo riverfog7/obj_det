@@ -3,7 +3,7 @@
 set -euo pipefail
 
 DATASET_SAVE_PATH="${SOURCE_DATASET_ROOT:-source_datasets}"
-AVAILABLE_DATASETS=(hazydet visdrone xwod dawn exdark voc2007 cityscapes bdd100k acdc carpk udacity)
+AVAILABLE_DATASETS=(hazydet visdrone xwod dawn exdark voc2007 bdd100k acdc carpk udacity)
 FORCE=false
 
 usage() {
@@ -11,7 +11,7 @@ usage() {
 Usage: scripts/download.sh [--force] <dataset> [<dataset> ...]
        scripts/download.sh [--force] all
 
-Datasets: hazydet, visdrone, xwod, dawn, exdark, voc2007, cityscapes, bdd100k, acdc, carpk, udacity
+Datasets: hazydet, visdrone, xwod, dawn, exdark, voc2007, bdd100k, acdc, carpk, udacity
 
 Existing dataset directories are preserved unless --force is supplied.
 EOF
@@ -123,19 +123,6 @@ download_voc2007() {
     for archive in "${archives[@]}"; do
         curl -LfsS "$base_url/$archive" -o "$path/$archive"
         tar -xf "$path/$archive" -C "$path"
-        rm "$path/$archive"
-    done
-}
-
-download_cityscapes() {
-    local path
-    path="$(dataset_path cityscapes)"
-    local archives=(leftImg8bit_trainvaltest.zip gtFine_trainvaltest.zip)
-
-    echo "Downloading Cityscapes (account required)..."
-    uv tool run --from cityscapesscripts csDownload -d "$path" "${archives[@]}"
-    for archive in "${archives[@]}"; do
-        unzip -q "$path/$archive" -d "$path"
         rm "$path/$archive"
     done
 }

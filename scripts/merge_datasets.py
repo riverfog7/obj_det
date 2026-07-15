@@ -36,7 +36,6 @@ SOURCE_DATASETS = (
 
 OMITTED_DATASETS = {
     "bdd100k": "The current Detection 2020 source package is unavailable.",
-    "cityscapes": "The official source requires an approved Cityscapes account.",
     "udacity": (
         "The obtainable raw mirror has no upstream train/val/test assignment and "
         "does not match the configured split-preserving COCO export."

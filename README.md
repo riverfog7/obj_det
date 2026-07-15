@@ -12,7 +12,6 @@ raw dataset files in source_datasets/
 Supported source formats:
 
 - `bdd100k`
-- `cityscapes`
 - `coco`
 - `exdark`
 - `pascal_voc`
@@ -55,11 +54,11 @@ dataset, use `--force`; only that dataset's directory is removed:
 bash scripts/download.sh --force voc2007
 ```
 
-Available download keys are `acdc`, `bdd100k`, `carpk`, `cityscapes`, `dawn`,
-`exdark`, `hazydet`, `udacity`, `visdrone`, `voc2007`, and `xwod`. The helper
-uses the official or upstream distribution path for each dataset. Hugging Face,
-Google Drive, Kaggle, Cityscapes, and Roboflow commands may require their normal
-local authentication.
+Available download keys are `acdc`, `bdd100k`, `carpk`, `dawn`, `exdark`,
+`hazydet`, `udacity`, `visdrone`, `voc2007`, and `xwod`. The helper uses the
+official or upstream distribution path for each dataset. Hugging Face, Google
+Drive, Kaggle, and Roboflow commands may require their normal local
+authentication.
 
 BDD100K is downloaded through its portal. Point the helper at the two staged
 official archives:
@@ -70,16 +69,13 @@ export BDD100K_LABELS_ARCHIVE=/downloads/bdd100k_det_20_labels_trainval.zip
 bash scripts/download.sh bdd100k
 ```
 
-Cityscapes uses `csDownload` and prompts for the account associated with the
-dataset license. ACDC, CARPK, Udacity, and Pascal VOC use their public upstream
-package endpoints.
+ACDC, CARPK, Udacity, and Pascal VOC use their public upstream package
+endpoints.
 
 Every configured model input is one ordinary RGB image and every target is a
 list of 2D objects. nuScenes is intentionally not supported because its native
 task requires synchronized multi-camera/LiDAR data, calibration, and 3D box
-projection. Cityscapes was recorded with stereo hardware, but this integration
-uses only `leftImg8bit`; ACDC likewise uses only its released RGB detection
-images and COCO boxes.
+projection. ACDC uses only its released RGB detection images and COCO boxes.
 
 ## Dataset YAML configs
 
@@ -89,7 +85,7 @@ Dataset configs live in:
 configs/datasets/
 ```
 
-The repository contains 13 raw-source configs and one additional ref for the
+The repository contains 12 raw-source configs and one additional ref for the
 locally merged dataset:
 
 | Dataset key | Source format | Converted splits | Controlled plan |
@@ -97,7 +93,6 @@ locally merged dataset:
 | `acdc` | COCO | train, val | no: public test labels unavailable |
 | `bdd100k` | BDD100K Scalabel JSON | train, val | no: public test labels unavailable |
 | `carpk` | COCO | train, val, test | yes |
-| `cityscapes` | Cityscapes polygons | train, val | no: public test labels unavailable |
 | `dawn` | YOLO without YAML | train, val, test | yes: project-defined split |
 | `exdark` | ExDark | train, val, test | yes |
 | `hazydet` | YOLO | train, val, test | yes |
@@ -143,7 +138,6 @@ Split path keys depend on the source format:
 
 - COCO configs use `images` and `annotations`.
 - BDD100K configs use `images` and one Scalabel `annotations` JSON file.
-- Cityscapes configs use `images` and polygon `annotations` directories.
 - Pascal VOC configs use `images`, `annotations`, and `image_set`.
 - VisDrone configs use `images` and `annotations`.
 - YOLO configs use `images` and `labels`; class names come from `root/data.yaml`.
@@ -242,9 +236,8 @@ Use `--force` to replace an existing merged output, or override the paths with
 
 The merge includes ACDC, CARPK, DAWN, ExDark, HazyDet, HazyDet-clear,
 HazyDet-real, VisDrone, VOC2007, and XWOD. It omits BDD100K because the current
-Detection 2020 package is unavailable, Cityscapes because its official source
-is account-gated, and Udacity because the obtainable source does not carry an
-authoritative train/validation/test assignment.
+Detection 2020 package is unavailable and Udacity because the obtainable source
+does not carry an authoritative train/validation/test assignment.
 
 The final classes are `person`, `bicycle`, `motorcycle`, `car`, `bus`, and
 `truck`. The fixed merge policy harmonizes pedestrian/people/rider as person,

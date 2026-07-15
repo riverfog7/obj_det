@@ -410,7 +410,6 @@ class MergeDatasetsTest(unittest.TestCase):
                 set(first_manifest["omitted_datasets"]),
                 {
                     "bdd100k",
-                    "cityscapes",
                     "udacity",
                 },
             )
