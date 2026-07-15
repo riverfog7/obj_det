@@ -5,6 +5,7 @@ from pathlib import Path
 
 from obj_det.models.adapters.hf_trainer import HFTrainerDetectionAdapter
 from obj_det.models.schemas import ModelConfig, PreprocessConfig, TrainConfig
+from obj_det.models.training import MAX_GRAD_NORM
 
 
 class HFTrainerAdapterTest(unittest.TestCase):
@@ -34,6 +35,18 @@ class HFTrainerAdapterTest(unittest.TestCase):
         self.assertEqual(str(args.eval_strategy), "IntervalStrategy.NO")
         self.assertEqual(str(args.save_strategy), "SaveStrategy.EPOCH")
         self.assertFalse(args.load_best_model_at_end)
+        self.assertEqual(args.max_grad_norm, MAX_GRAD_NORM)
+
+    def test_gradient_clipping_cannot_be_overridden_by_hparams(self):
+        cfg = TrainConfig(
+            run_key="r",
+            classes=["car"],
+            output_dir=Path("runs/test"),
+            preprocess=PreprocessConfig(resize_mode="letterbox", height=32, width=32),
+            hparams={"max_grad_norm": 99.0},
+        )
+
+        self.assertEqual(self.adapter._training_args(cfg).max_grad_norm, MAX_GRAD_NORM)
 
 if __name__ == "__main__":
     unittest.main()

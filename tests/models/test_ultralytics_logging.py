@@ -13,7 +13,7 @@ from datasets import Dataset
 from obj_det.models.adapters.ultralytics import _NoOpEpochScheduler, UltralyticsDetectionAdapter
 from obj_det.models.schemas import DataLoaderConfig, EvalConfig, ModelConfig, PredictConfig, PreprocessConfig, TrainConfig
 from obj_det.models.schemas.artifact import ModelArtifact
-from obj_det.models.training import CheckpointState
+from obj_det.models.training import CheckpointState, MAX_GRAD_NORM
 
 from .helpers import image_bytes, row
 
@@ -361,18 +361,24 @@ class UltralyticsLoggingTest(unittest.TestCase):
         class ScaleTracker:
             def __init__(self):
                 self.value = 8.0
+                self.unscaled = False
 
             def get_scale(self):
                 return self.value
 
-        class OverflowDetectionTrainer(FakeDetectionTrainer):
-            def optimizer_step(self):
-                self.scaler.value = 4.0
+            def unscale_(self, optimizer):
+                self.unscaled = True
+
+            def step(self, optimizer):
+                return None
+
+            def update(self):
+                self.value = 4.0
 
         adapter = UltralyticsDetectionAdapter(
             ModelConfig(key="yolo", backend="ultralytics", model_name_or_path="yolo11n.pt", preprocess=PreprocessConfig(resize_mode="letterbox", height=64, width=64))
         )
-        trainer_cls = adapter._trainer_class(OverflowDetectionTrainer)
+        trainer_cls = adapter._trainer_class(FakeDetectionTrainer)
         trainer = trainer_cls(
             train_source=None,
             val_source=None,
@@ -386,11 +392,89 @@ class UltralyticsLoggingTest(unittest.TestCase):
             logging_steps=100,
         )
         trainer.scaler = ScaleTracker()
+        trainer.model = torch.nn.Linear(2, 1)
+        trainer.optimizer = torch.optim.SGD(trainer.model.parameters(), lr=0.1)
         trainer._protocol_scheduler = SimpleNamespace(step=lambda: self.fail("scheduler advanced"))
 
         trainer.optimizer_step()
 
         self.assertEqual(trainer._protocol_optimizer_steps, 0)
+        self.assertTrue(trainer.scaler.unscaled)
+
+    def test_optimizer_step_uses_shared_clipping_without_ema_update(self):
+        class ScaleTracker:
+            def get_scale(self):
+                return 1.0
+
+            def unscale_(self, optimizer):
+                pass
+
+            def step(self, optimizer):
+                optimizer.step()
+
+            def update(self):
+                pass
+
+        adapter = UltralyticsDetectionAdapter(
+            ModelConfig(key="yolo", backend="ultralytics", model_name_or_path="yolo11n.pt", preprocess=PreprocessConfig(resize_mode="letterbox", height=64, width=64))
+        )
+        trainer = adapter._trainer_class(FakeDetectionTrainer)(
+            train_source=None,
+            val_source=None,
+            train_transform=None,
+            eval_transform=None,
+            loader_cfg=None,
+            classes=["car"],
+            max_steps=None,
+            logger=None,
+            log_prefix="train",
+            logging_steps=100,
+        )
+        trainer.model = torch.nn.Linear(2, 1)
+        trainer.optimizer = torch.optim.SGD(trainer.model.parameters(), lr=0.1)
+        trainer.scaler = ScaleTracker()
+        trainer.ema = SimpleNamespace(update=lambda model: self.fail("EMA updated"))
+        trainer._protocol_scheduler = SimpleNamespace(step=lambda: None)
+
+        with patch("torch.nn.utils.clip_grad_norm_") as clip:
+            trainer.optimizer_step()
+
+        clip.assert_called_once()
+        clipped_parameters = list(clip.call_args.args[0])
+        self.assertEqual(clipped_parameters, list(trainer.model.parameters()))
+        self.assertEqual(clip.call_args.kwargs["max_norm"], MAX_GRAD_NORM)
+        self.assertEqual(trainer._protocol_optimizer_steps, 1)
+
+    def test_save_model_copies_raw_weights_into_provider_container(self):
+        class SavingFakeDetectionTrainer(FakeDetectionTrainer):
+            def save_model(self):
+                self.saved_weight = self.ema.ema.weight.detach().clone()
+                return True
+
+        adapter = UltralyticsDetectionAdapter(
+            ModelConfig(key="yolo", backend="ultralytics", model_name_or_path="yolo11n.pt", preprocess=PreprocessConfig(resize_mode="letterbox", height=64, width=64))
+        )
+        trainer = adapter._trainer_class(SavingFakeDetectionTrainer)(
+            train_source=None,
+            val_source=None,
+            train_transform=None,
+            eval_transform=None,
+            loader_cfg=None,
+            classes=["car"],
+            max_steps=None,
+            logger=None,
+            log_prefix="train",
+            logging_steps=100,
+        )
+        trainer.model = torch.nn.Linear(2, 1, bias=False)
+        trainer.ema = SimpleNamespace(ema=torch.nn.Linear(2, 1, bias=False))
+        with torch.no_grad():
+            trainer.model.weight.fill_(3.0)
+            trainer.ema.ema.weight.zero_()
+
+        trainer.save_model()
+
+        self.assertTrue(torch.equal(trainer.saved_weight, trainer.model.weight))
 
     def test_trial_final_save_redirects_provider_best_to_single_checkpoint(self):
         class SavingFakeDetectionTrainer(FakeDetectionTrainer):
@@ -507,6 +591,9 @@ class UltralyticsLoggingTest(unittest.TestCase):
         self.assertEqual(artifact.meta["protocol"], "controlled")
         self.assertEqual(artifact.meta["ultralytics_best"], str(best))
         self.assertEqual(artifact.meta["checkpoint_selection"], "last")
+        self.assertEqual(artifact.meta["weight_source"], "raw")
+        self.assertFalse(artifact.meta["ema_enabled"])
+        self.assertEqual(artifact.meta["max_grad_norm"], MAX_GRAD_NORM)
 
 
 if __name__ == "__main__":

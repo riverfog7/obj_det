@@ -26,6 +26,7 @@ from obj_det.models.schemas.config import EvalConfig, PredictConfig, TrainConfig
 from obj_det.models.schemas.prediction import PredictionObject, PredictionRecord
 from obj_det.models.training import (
     CheckpointState,
+    MAX_GRAD_NORM,
     build_adamw_param_groups,
     build_warmup_cosine_scheduler,
     optimizer_steps_per_epoch,
@@ -242,6 +243,9 @@ class HFTrainerDetectionAdapter(BaseModelAdapter):
                 "optimizer_steps": optimizer_steps,
                 "checkpoint_selection": "best_validation" if selected_is_best else "last",
                 "pretrained_source": str(self.cfg.weights or self.cfg.model_name_or_path),
+                "weight_source": "raw",
+                "ema_enabled": False,
+                "max_grad_norm": MAX_GRAD_NORM,
                 "optimizer": optimizer_meta,
                 "scheduler": scheduler_meta,
                 **checkpoint_state.artifact_meta(),
@@ -382,7 +386,7 @@ class HFTrainerDetectionAdapter(BaseModelAdapter):
             weight_decay=float(train_cfg.optimizer.weight_decay),
             warmup_ratio=0.0,
             lr_scheduler_type="constant",
-            max_grad_norm=float(hparams.get("max_grad_norm", 1.0)),
+            max_grad_norm=MAX_GRAD_NORM,
             seed=train_cfg.seed,
             fp16=bool(train_cfg.amp and torch.cuda.is_available()),
             eval_strategy="no",

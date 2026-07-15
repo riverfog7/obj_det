@@ -23,6 +23,8 @@ _NORMALIZATION_MODULES = (
     nn.GroupNorm,
 )
 
+MAX_GRAD_NORM = 1.0
+
 
 def require_single_process(*, context: str) -> None:
     world_size = int(os.environ.get("WORLD_SIZE", "1"))

@@ -25,6 +25,7 @@ from obj_det.models.schemas.config import EvalConfig, PredictConfig, TrainConfig
 from obj_det.models.schemas.prediction import PredictionObject, PredictionRecord
 from obj_det.models.training import (
     CheckpointState,
+    MAX_GRAD_NORM,
     build_adamw_param_groups,
     build_warmup_cosine_scheduler,
     optimizer_steps_per_epoch,
@@ -320,6 +321,9 @@ class UltralyticsDetectionAdapter(BaseModelAdapter):
             "checkpoint_selection": "best_validation" if selected_is_best else "last",
             "optimizer_steps": int(getattr(trainer, "_protocol_optimizer_steps", 0)),
             "pretrained_source": str(self.cfg.weights or self.cfg.model_name_or_path),
+            "weight_source": "raw",
+            "ema_enabled": False,
+            "max_grad_norm": MAX_GRAD_NORM,
             "optimizer": optimizer_meta,
             "scheduler": scheduler_meta,
         }
@@ -512,17 +516,26 @@ class UltralyticsDetectionAdapter(BaseModelAdapter):
                 self.scheduler = _NoOpEpochScheduler(self._protocol_scheduler)
 
             def optimizer_step(self):
-                scaler = getattr(self, "scaler", None)
-                scale_before = scaler.get_scale() if scaler is not None else None
-                super().optimizer_step()
-                if (
-                    scale_before is not None
-                    and scaler.get_scale() < scale_before
-                ):
+                scale_before = self.scaler.get_scale()
+                self.scaler.unscale_(self.optimizer)
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=MAX_GRAD_NORM)
+                self.scaler.step(self.optimizer)
+                self.scaler.update()
+                self.optimizer.zero_grad()
+                if self.scaler.get_scale() < scale_before:
                     return
                 self._protocol_optimizer_steps += 1
                 if self._protocol_scheduler is not None:
                     self._protocol_scheduler.step()
+
+            def save_model(self):
+                ema = getattr(self, "ema", None)
+                if ema is not None:
+                    from ultralytics.utils.torch_utils import unwrap_model
+
+                    raw_model = unwrap_model(self.model)
+                    unwrap_model(ema.ema).load_state_dict(raw_model.state_dict())
+                return super().save_model()
 
             def _protocol_epoch_end(self):
                 epoch = int(self.epoch) + 1

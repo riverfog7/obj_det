@@ -15,6 +15,7 @@ from obj_det.models.adapters.torchvision import (
 )
 from obj_det.models.data.sample import DetectionSample, DetectionTarget
 from obj_det.models.schemas import ModelConfig, PredictConfig, PreprocessConfig, TrainConfig
+from obj_det.models.training import MAX_GRAD_NORM
 
 
 class TorchvisionAdapterTest(unittest.TestCase):
@@ -195,6 +196,17 @@ class TorchvisionAdapterTest(unittest.TestCase):
 
         self.assertAlmostEqual(factor(4), 1.0)
         self.assertAlmostEqual(factor(200), 0.01)
+
+    def test_training_args_use_shared_gradient_clipping(self):
+        cfg = TrainConfig(
+            run_key="r",
+            classes=["car"],
+            output_dir=Path("runs/test"),
+            preprocess=PreprocessConfig(resize_mode="letterbox", height=32, width=32),
+            hparams={"max_grad_norm": 99.0},
+        )
+
+        self.assertEqual(self._adapter("fasterrcnn_resnet50_fpn")._training_args(cfg).max_grad_norm, MAX_GRAD_NORM)
 
 
 if __name__ == "__main__":
