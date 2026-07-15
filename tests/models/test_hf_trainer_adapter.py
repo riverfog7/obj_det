@@ -14,6 +14,7 @@ class HFTrainerAdapterTest(unittest.TestCase):
             ModelConfig(
                 key="hf",
                 backend="hf_trainer",
+                detector_pretraining_dataset="coco",
                 model_name_or_path="dummy/model",
                 preprocess=PreprocessConfig(resize_mode="letterbox", height=32, width=32),
             )

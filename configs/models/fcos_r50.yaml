@@ -1,5 +1,6 @@
 key: fcos_r50
 backend: torchvision
+detector_pretraining_dataset: coco
 model_name_or_path: fcos_resnet50_fpn
 weights: DEFAULT
 preprocess:

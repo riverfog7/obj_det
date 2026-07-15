@@ -1,5 +1,6 @@
 key: detr_r50
 backend: hf_trainer
+detector_pretraining_dataset: coco
 model_name_or_path: facebook/detr-resnet-50
 preprocess:
   resize_mode: shortest_edge

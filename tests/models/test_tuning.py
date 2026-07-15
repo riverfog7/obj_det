@@ -30,6 +30,7 @@ class DummyAdapter(BaseModelAdapter):
             ModelConfig(
                 key="dummy",
                 backend="torchvision",
+                detector_pretraining_dataset="coco",
                 model_name_or_path="x",
                 preprocess=PreprocessConfig(resize_mode="letterbox", height=32, width=32),
             )

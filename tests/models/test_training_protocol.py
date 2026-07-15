@@ -16,12 +16,26 @@ from obj_det.models.training import (
     build_adamw_param_groups,
     optimizer_steps_per_epoch,
     require_metric,
+    require_fully_trainable,
     require_single_process,
     warmup_cosine_factor,
 )
 
 
 class TrainingProtocolTest(unittest.TestCase):
+    def test_backbone_audit_requires_every_parameter_trainable(self):
+        backbone = nn.Sequential(nn.Linear(2, 2), nn.LayerNorm(2))
+
+        metadata = require_fully_trainable(backbone)
+
+        self.assertEqual(metadata["backbone_parameters_total"], 10)
+        self.assertEqual(metadata["backbone_parameters_trainable"], 10)
+        self.assertEqual(metadata["backbone_parameters_frozen"], 0)
+
+        backbone[0].weight.requires_grad = False
+        with self.assertRaisesRegex(ValueError, "fully trainable backbone"):
+            require_fully_trainable(backbone)
+
     def test_shared_protocol_fails_explicitly_for_multi_process_execution(self):
         with patch.dict("os.environ", {"WORLD_SIZE": "2"}):
             with self.assertRaisesRegex(NotImplementedError, "one-writer"):

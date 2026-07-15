@@ -43,6 +43,7 @@ class CliTest(unittest.TestCase):
                 "model": {
                     "key": "m",
                     "backend": "torchvision",
+                    "detector_pretraining_dataset": "coco",
                     "model_name_or_path": "fasterrcnn_resnet50_fpn",
                     "preprocess": {"resize_mode": "letterbox", "height": 32, "width": 32},
                 },
@@ -85,6 +86,7 @@ class CliTest(unittest.TestCase):
                 "model": {
                     "key": "m",
                     "backend": "torchvision",
+                    "detector_pretraining_dataset": "coco",
                     "model_name_or_path": "fasterrcnn_resnet50_fpn",
                     "preprocess": {"resize_mode": "letterbox", "height": 32, "width": 32},
                 },
@@ -103,6 +105,7 @@ class CliTest(unittest.TestCase):
                 "model": {
                     "key": "m",
                     "backend": "torchvision",
+                    "detector_pretraining_dataset": "coco",
                     "model_name_or_path": "fasterrcnn_resnet50_fpn",
                     "preprocess": {"resize_mode": "letterbox", "height": 32, "width": 32},
                 },
@@ -128,6 +131,7 @@ class CliTest(unittest.TestCase):
                 "model": {
                     "key": "m",
                     "backend": "torchvision",
+                    "detector_pretraining_dataset": "coco",
                     "model_name_or_path": "fasterrcnn_resnet50_fpn",
                     "preprocess": {"resize_mode": "letterbox", "height": 32, "width": 32},
                 },
@@ -176,6 +180,7 @@ class CliTest(unittest.TestCase):
                         "model:",
                         "  key: m",
                         "  backend: torchvision",
+                        "  detector_pretraining_dataset: coco",
                         "  model_name_or_path: fasterrcnn_resnet50_fpn",
                         "  preprocess:",
                         "    resize_mode: letterbox",

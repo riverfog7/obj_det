@@ -39,6 +39,7 @@ from obj_det.models.training import (
     build_adamw_param_groups,
     build_warmup_cosine_scheduler,
     optimizer_steps_per_epoch,
+    require_fully_trainable,
     require_metric,
     require_single_process,
 )
@@ -124,6 +125,9 @@ class TorchvisionDetectionAdapter(BaseModelAdapter):
             num_classes=spec.model_num_classes(len(train_cfg.classes)),
             preprocess=train_cfg.preprocess,
             weights=weights,
+        )
+        pretraining_meta.update(
+            require_fully_trainable(model.backbone, component="backbone")
         )
         parser = HFDetectionRowParser(classes=train_cfg.classes, label_mode=train_cfg.label_mode, decode_backend=train_cfg.loader.decode_backend)
         transform = build_detection_transform(train_cfg.preprocess, train_cfg.augmentation, seed=train_cfg.seed)
@@ -367,11 +371,16 @@ class TorchvisionDetectionAdapter(BaseModelAdapter):
         if preprocess.resize_mode != "shortest_edge":
             raise ValueError("TorchVision models require shortest_edge preprocessing")
 
+        builder_kwargs = {
+            "weights": weights,
+            "weights_backbone": None,
+            "min_size": preprocess.shortest_edge,
+            "max_size": preprocess.longest_edge,
+        }
+        if weights is not None:
+            builder_kwargs["trainable_backbone_layers"] = 5
         model = spec.builder(
-            weights=weights,
-            weights_backbone=None,
-            min_size=preprocess.shortest_edge,
-            max_size=preprocess.longest_edge,
+            **builder_kwargs,
         )
         if spec.head_kind == "roi":
             self._replace_roi_box_predictor(model, num_classes)
@@ -408,8 +417,14 @@ class TorchvisionDetectionAdapter(BaseModelAdapter):
 
     def _pretraining_metadata(self, spec: _TorchvisionModelSpec, weights) -> dict:
         configured = self.cfg.params["weights"] if "weights" in self.cfg.params else self.cfg.weights
+        common = {
+            "detector_pretraining_dataset": self.cfg.detector_pretraining_dataset,
+            "backbone_pretraining_allowed": True,
+            "class_head_reinitialized": True,
+        }
         if weights is None:
             return {
+                **common,
                 "pretrained": False,
                 "pretrained_config": None if configured is None else str(configured),
                 "pretrained_source": None,
@@ -419,6 +434,7 @@ class TorchvisionDetectionAdapter(BaseModelAdapter):
         url = getattr(weights, "url", None) or getattr(value, "url", None)
         name = getattr(weights, "name", str(weights))
         return {
+            **common,
             "pretrained": True,
             "pretrained_config": None if configured is None else str(configured),
             "pretrained_weights": name,

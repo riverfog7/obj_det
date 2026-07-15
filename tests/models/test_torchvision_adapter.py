@@ -24,6 +24,7 @@ class TorchvisionAdapterTest(unittest.TestCase):
             ModelConfig(
                 key="tv",
                 backend="torchvision",
+                detector_pretraining_dataset="coco",
                 model_name_or_path=model_name,
                 preprocess=PreprocessConfig(
                     resize_mode="shortest_edge", shortest_edge=800, longest_edge=1333
@@ -128,6 +129,9 @@ class TorchvisionAdapterTest(unittest.TestCase):
 
         self.assertIs(weights, spec.weights_cls.DEFAULT)
         self.assertTrue(metadata["pretrained"])
+        self.assertEqual(metadata["detector_pretraining_dataset"], "coco")
+        self.assertTrue(metadata["backbone_pretraining_allowed"])
+        self.assertTrue(metadata["class_head_reinitialized"])
         self.assertEqual(metadata["pretrained_config"], "default")
         self.assertEqual(metadata["pretrained_weights"], weights.name)
         self.assertTrue(metadata["pretrained_source"])

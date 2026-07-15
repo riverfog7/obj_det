@@ -1,5 +1,6 @@
 key: conditional_detr_r50
 backend: hf_trainer
+detector_pretraining_dataset: coco
 model_name_or_path: microsoft/conditional-detr-resnet-50
 preprocess:
   resize_mode: shortest_edge

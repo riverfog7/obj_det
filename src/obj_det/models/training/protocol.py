@@ -66,6 +66,28 @@ def build_adamw_param_groups(model: nn.Module, *, weight_decay: float) -> list[d
     return groups
 
 
+def require_fully_trainable(
+    module: nn.Module,
+    *,
+    component: str = "backbone",
+) -> dict[str, int]:
+    parameters = list(module.named_parameters())
+    if not parameters:
+        raise ValueError(f"Cannot audit {component}: no parameters found")
+
+    frozen = [(name, parameter) for name, parameter in parameters if not parameter.requires_grad]
+    if frozen:
+        names = ", ".join(name for name, _ in frozen[:5])
+        raise ValueError(f"Controlled training requires a fully trainable {component}; frozen: {names}")
+
+    total = sum(parameter.numel() for _, parameter in parameters)
+    return {
+        f"{component}_parameters_total": total,
+        f"{component}_parameters_trainable": total,
+        f"{component}_parameters_frozen": 0,
+    }
+
+
 def optimizer_steps_per_epoch(num_batches: int) -> int:
     if num_batches <= 0:
         raise ValueError("num_batches must be positive")

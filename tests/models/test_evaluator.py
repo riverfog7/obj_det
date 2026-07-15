@@ -22,6 +22,7 @@ class _PredictionConfigRecordingAdapter(BaseModelAdapter):
             ModelConfig(
                 key="recording",
                 backend="torchvision",
+                detector_pretraining_dataset="coco",
                 model_name_or_path="unused",
                 preprocess=PreprocessConfig(resize_mode="letterbox", height=32, width=32),
             )

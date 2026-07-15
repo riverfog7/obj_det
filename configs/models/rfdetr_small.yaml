@@ -1,5 +1,6 @@
 key: rfdetr_small
 backend: hf_trainer
+detector_pretraining_dataset: coco
 model_name_or_path: Roboflow/rf-detr-small
 preprocess:
   resize_mode: exact

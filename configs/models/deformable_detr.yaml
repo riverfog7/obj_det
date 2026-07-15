@@ -1,5 +1,6 @@
 key: deformable_detr
 backend: hf_trainer
+detector_pretraining_dataset: coco
 model_name_or_path: SenseTime/deformable-detr
 preprocess:
   resize_mode: shortest_edge

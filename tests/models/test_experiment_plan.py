@@ -285,12 +285,12 @@ class ExperimentPlanTest(unittest.TestCase):
             encoding="utf-8",
         )
         (root / "models" / "yolo.yaml").write_text(
-            "key: yolo\nbackend: ultralytics\nmodel_name_or_path: yolo.pt\n"
+            "key: yolo\nbackend: ultralytics\ndetector_pretraining_dataset: coco\nmodel_name_or_path: yolo.pt\n"
             "preprocess:\n  resize_mode: letterbox\n  height: 32\n  width: 32\n",
             encoding="utf-8",
         )
         (root / "models" / "tv.yaml").write_text(
-            "key: tv\nbackend: torchvision\nmodel_name_or_path: fasterrcnn_resnet50_fpn\n"
+            "key: tv\nbackend: torchvision\ndetector_pretraining_dataset: coco\nmodel_name_or_path: fasterrcnn_resnet50_fpn\n"
             "preprocess:\n  resize_mode: letterbox\n  height: 32\n  width: 32\n",
             encoding="utf-8",
         )

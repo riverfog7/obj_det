@@ -26,6 +26,7 @@ class ImportTest(unittest.TestCase):
         cfg = ModelConfig(
             key="fasterrcnn",
             backend="torchvision",
+            detector_pretraining_dataset="coco",
             model_name_or_path="fasterrcnn_resnet50_fpn",
             preprocess=PreprocessConfig(
                 resize_mode="shortest_edge", shortest_edge=800, longest_edge=1333
@@ -37,6 +38,7 @@ class ImportTest(unittest.TestCase):
             "model": {
                 "key": "m",
                 "backend": "torchvision",
+                "detector_pretraining_dataset": "coco",
                 "model_name_or_path": "fasterrcnn_resnet50_fpn",
                 "preprocess": {"resize_mode": "letterbox", "height": 32, "width": 32},
             },
@@ -67,6 +69,7 @@ class ImportTest(unittest.TestCase):
                 "model": {
                     "key": "m",
                     "backend": "torchvision",
+                    "detector_pretraining_dataset": "coco",
                     "model_name_or_path": "fasterrcnn_resnet50_fpn",
                     "preprocess": {"resize_mode": "letterbox", "height": 32, "width": 32},
                 },

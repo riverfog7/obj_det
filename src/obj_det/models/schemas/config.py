@@ -55,6 +55,7 @@ class PreprocessConfig(ModelSchema):
 class ModelConfig(ModelSchema):
     key: str
     backend: BackendName
+    detector_pretraining_dataset: Literal["coco"]
     model_name_or_path: str | Path
     preprocess: PreprocessConfig
     weights: str | Path | None = None

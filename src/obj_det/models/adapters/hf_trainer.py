@@ -30,6 +30,7 @@ from obj_det.models.training import (
     build_adamw_param_groups,
     build_warmup_cosine_scheduler,
     optimizer_steps_per_epoch,
+    require_fully_trainable,
     require_metric,
     require_single_process,
 )
@@ -73,6 +74,7 @@ class HFTrainerDetectionAdapter(BaseModelAdapter):
             ignore_mismatched_sizes=True,
             **self.cfg.params.get("model_from_pretrained_kwargs", {}),
         )
+        backbone_meta = require_fully_trainable(model.base_model, component="backbone")
 
         parser = HFDetectionRowParser(classes=train_cfg.classes, label_mode=train_cfg.label_mode, decode_backend=train_cfg.loader.decode_backend)
         transform = build_detection_transform(train_cfg.preprocess, train_cfg.augmentation, seed=train_cfg.seed)
@@ -243,11 +245,15 @@ class HFTrainerDetectionAdapter(BaseModelAdapter):
                 "optimizer_steps": optimizer_steps,
                 "checkpoint_selection": "best_validation" if selected_is_best else "last",
                 "pretrained_source": str(self.cfg.weights or self.cfg.model_name_or_path),
+                "detector_pretraining_dataset": self.cfg.detector_pretraining_dataset,
+                "backbone_pretraining_allowed": True,
+                "class_head_reinitialized": True,
                 "weight_source": "raw",
                 "ema_enabled": False,
                 "max_grad_norm": MAX_GRAD_NORM,
                 "optimizer": optimizer_meta,
                 "scheduler": scheduler_meta,
+                **backbone_meta,
                 **checkpoint_state.artifact_meta(),
             },
         )

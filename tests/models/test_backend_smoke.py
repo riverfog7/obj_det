@@ -47,6 +47,7 @@ class BackendSmokeTest(unittest.TestCase):
             adapter = model_adapter_from_config(ModelConfig(
                 key="tiny_detr",
                 backend="hf_trainer",
+                detector_pretraining_dataset="coco",
                 model_name_or_path="hf-internal-testing/tiny-random-detr",
                 preprocess=preprocess,
             ))
@@ -76,6 +77,7 @@ class BackendSmokeTest(unittest.TestCase):
             adapter = model_adapter_from_config(ModelConfig(
                 key="yolo_smoke",
                 backend="ultralytics",
+                detector_pretraining_dataset="coco",
                 model_name_or_path=os.environ.get("OBJ_DET_YOLO_SMOKE_MODEL", "yolo11n.pt"),
                 preprocess=preprocess,
             ))
@@ -112,6 +114,7 @@ class BackendSmokeTest(unittest.TestCase):
             adapter = model_adapter_from_config(ModelConfig(
                 key="torchvision_smoke",
                 backend="torchvision",
+                detector_pretraining_dataset="coco",
                 model_name_or_path="fasterrcnn_resnet50_fpn",
                 preprocess=preprocess,
                 params={"weights": None},

@@ -1,5 +1,6 @@
 key: dfine_nano
 backend: hf_trainer
+detector_pretraining_dataset: coco
 model_name_or_path: ustc-community/dfine-nano-coco
 preprocess:
   resize_mode: exact

@@ -29,6 +29,7 @@ from obj_det.models.training import (
     build_adamw_param_groups,
     build_warmup_cosine_scheduler,
     optimizer_steps_per_epoch,
+    require_fully_trainable,
     require_metric,
 )
 from obj_det.models.utils.repro import set_seed
@@ -251,6 +252,7 @@ class UltralyticsDetectionAdapter(BaseModelAdapter):
             "cos_lr": False,
             "patience": 0,
             "nbs": int(train_cfg.batch_size),
+            "freeze": 0,
         }
         overrides.update(train_cfg.backend_params.get("overrides", {}))
         overrides.update(
@@ -265,6 +267,7 @@ class UltralyticsDetectionAdapter(BaseModelAdapter):
                 "cos_lr": False,
                 "patience": 0,
                 "nbs": int(train_cfg.batch_size),
+                "freeze": 0,
             }
         )
         overrides.update(_CONTROLLED_AUG_OFF)
@@ -321,11 +324,15 @@ class UltralyticsDetectionAdapter(BaseModelAdapter):
             "checkpoint_selection": "best_validation" if selected_is_best else "last",
             "optimizer_steps": int(getattr(trainer, "_protocol_optimizer_steps", 0)),
             "pretrained_source": str(self.cfg.weights or self.cfg.model_name_or_path),
+            "detector_pretraining_dataset": self.cfg.detector_pretraining_dataset,
+            "backbone_pretraining_allowed": True,
+            "class_head_reinitialized": True,
             "weight_source": "raw",
             "ema_enabled": False,
             "max_grad_norm": MAX_GRAD_NORM,
             "optimizer": optimizer_meta,
             "scheduler": scheduler_meta,
+            **(getattr(trainer, "_protocol_backbone_meta", None) or {}),
         }
         if checkpoint_state is not None:
             meta.update(checkpoint_state.artifact_meta())
@@ -403,6 +410,7 @@ class UltralyticsDetectionAdapter(BaseModelAdapter):
                 self._protocol_optimizer_steps = 0
                 self._protocol_last_eval_epoch = 0
                 self._protocol_stop_at_epoch_end = False
+                self._protocol_backbone_meta = None
                 super().__init__(*args, **kwargs)
 
             def run_callbacks(self, event: str):
@@ -495,6 +503,12 @@ class UltralyticsDetectionAdapter(BaseModelAdapter):
 
             def build_optimizer(self, model, name="AdamW", lr=0.001, momentum=0.9, decay=1e-5, iterations=1e5):
                 cfg = self._protocol_optimizer_cfg
+                layers = getattr(model, "model", None)
+                backbone = layers[:-1] if layers is not None and len(layers) > 1 else model
+                self._protocol_backbone_meta = require_fully_trainable(
+                    backbone,
+                    component="backbone",
+                )
                 groups = build_adamw_param_groups(model, weight_decay=cfg.weight_decay)
                 return torch.optim.AdamW(
                     groups,

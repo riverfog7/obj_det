@@ -1,5 +1,6 @@
 key: dfine_small
 backend: hf_trainer
+detector_pretraining_dataset: coco
 model_name_or_path: ustc-community/dfine-small-coco
 preprocess:
   resize_mode: exact

@@ -63,6 +63,34 @@ EXPECTED_PREPROCESS = {
     },
 }
 
+EXPECTED_PRETRAINED_SOURCES = {
+    "yolo26n": "yolo26n.pt",
+    "yolo26s": "yolo26s.pt",
+    "yolo26m": "yolo26m.pt",
+    "yolo11n": "yolo11n.pt",
+    "yolo11s": "yolo11s.pt",
+    "yolo11m": "yolo11m.pt",
+    "yolov8n": "yolov8n.pt",
+    "yolov8s": "yolov8s.pt",
+    "yolov8m": "yolov8m.pt",
+    "rtdetr_r50vd": "PekingU/rtdetr_r50vd",
+    "dfine_nano": "ustc-community/dfine-nano-coco",
+    "dfine_small": "ustc-community/dfine-small-coco",
+    "rfdetr_nano": "Roboflow/rf-detr-nano",
+    "rfdetr_small": "Roboflow/rf-detr-small",
+    "rfdetr_base": "Roboflow/rf-detr-base",
+    "rfdetr_medium": "Roboflow/rf-detr-medium",
+    "detr_r50": "facebook/detr-resnet-50",
+    "conditional_detr_r50": "microsoft/conditional-detr-resnet-50",
+    "deformable_detr": "SenseTime/deformable-detr",
+    "yolos_tiny": "hustvl/yolos-tiny",
+    "yolos_small": "hustvl/yolos-small",
+    "fasterrcnn_r50": "DEFAULT",
+    "retinanet_r50": "DEFAULT",
+    "fcos_r50": "DEFAULT",
+    "maskrcnn_r50_boxonly": "DEFAULT",
+}
+
 
 class ModelConfigMatrixTest(unittest.TestCase):
     def test_expected_model_configs_exist_and_load(self):
@@ -77,6 +105,11 @@ class ModelConfigMatrixTest(unittest.TestCase):
                 self.assertIn(cfg.backend, MODEL_BACKENDS)
                 if cfg.backend == "torchvision":
                     self.assertEqual(cfg.weights, "DEFAULT")
+                self.assertEqual(cfg.detector_pretraining_dataset, "coco")
+                self.assertEqual(
+                    str(cfg.weights or cfg.model_name_or_path),
+                    EXPECTED_PRETRAINED_SOURCES[key],
+                )
                 preprocess = cfg.preprocess
                 self.assertEqual(
                     (
@@ -137,6 +170,7 @@ class ModelConfigMatrixTest(unittest.TestCase):
 
         self.assertEqual(model.transform.min_size, (800,))
         self.assertEqual(model.transform.max_size, 1333)
+        self.assertTrue(all(parameter.requires_grad for parameter in model.backbone.parameters()))
 
 
 if __name__ == "__main__":

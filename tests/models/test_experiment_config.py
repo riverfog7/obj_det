@@ -7,12 +7,25 @@ from tempfile import TemporaryDirectory
 from pydantic import ValidationError
 
 from obj_det.models.experiment import load_experiment_config
-from obj_det.models.schemas import PreprocessConfig, TrainConfig
+from obj_det.models.schemas import ModelConfig, PreprocessConfig, TrainConfig
 from obj_det.models.schemas.experiment import ExperimentConfig
 from obj_det.models.schemas.tuning import TuningConfig
 
 
 class ExperimentConfigTest(unittest.TestCase):
+    def test_model_requires_detector_pretraining_provenance(self):
+        with self.assertRaises(ValidationError):
+            ModelConfig(
+                key="m",
+                backend="torchvision",
+                model_name_or_path="fasterrcnn_resnet50_fpn",
+                preprocess=PreprocessConfig(
+                    resize_mode="shortest_edge",
+                    shortest_edge=800,
+                    longest_edge=1333,
+                ),
+            )
+
     def test_preprocess_modes_validate_exclusive_dimensions(self):
         self.assertEqual(
             PreprocessConfig(resize_mode="letterbox", height=640, width=640).height,
@@ -58,6 +71,7 @@ class ExperimentConfigTest(unittest.TestCase):
                 "model": {
                     "key": "m",
                     "backend": "torchvision",
+                    "detector_pretraining_dataset": "coco",
                     "model_name_or_path": "fasterrcnn_resnet50_fpn",
                     "preprocess": {"resize_mode": "letterbox", "height": 320, "width": 320},
                 },
@@ -142,6 +156,7 @@ class ExperimentConfigTest(unittest.TestCase):
                     "model": {
                         "key": "m",
                         "backend": "torchvision",
+                        "detector_pretraining_dataset": "coco",
                         "model_name_or_path": "fasterrcnn_resnet50_fpn",
                         "preprocess": {"resize_mode": "letterbox", "height": 32, "width": 32},
                     },
@@ -169,6 +184,7 @@ class ExperimentConfigTest(unittest.TestCase):
                     [
                         "key: m",
                         "backend: torchvision",
+                        "detector_pretraining_dataset: coco",
                         "model_name_or_path: fasterrcnn_resnet50_fpn",
                         "preprocess:",
                         "  resize_mode: letterbox",
@@ -239,6 +255,7 @@ class ExperimentConfigTest(unittest.TestCase):
                     "model": {
                         "key": "m",
                         "backend": "torchvision",
+                        "detector_pretraining_dataset": "coco",
                         "model_name_or_path": "fasterrcnn_resnet50_fpn",
                         "preprocess": {"resize_mode": "letterbox", "height": 32, "width": 32},
                     },
@@ -259,6 +276,7 @@ class ExperimentConfigTest(unittest.TestCase):
                     "model": {
                         "key": "m",
                         "backend": "torchvision",
+                        "detector_pretraining_dataset": "coco",
                         "model_name_or_path": "fasterrcnn_resnet50_fpn",
                         "preprocess": {"resize_mode": "letterbox", "height": 32, "width": 32},
                     },
@@ -279,6 +297,7 @@ class ExperimentConfigTest(unittest.TestCase):
                     "model": {
                         "key": "m",
                         "backend": "torchvision",
+                        "detector_pretraining_dataset": "coco",
                         "model_name_or_path": "fasterrcnn_resnet50_fpn",
                         "preprocess": {"resize_mode": "letterbox", "height": 32, "width": 32},
                     },
@@ -309,6 +328,7 @@ class ExperimentConfigTest(unittest.TestCase):
                         "model": {
                             "key": "m",
                             "backend": "torchvision",
+                            "detector_pretraining_dataset": "coco",
                             "model_name_or_path": "fasterrcnn_resnet50_fpn",
                             "preprocess": {"resize_mode": "letterbox", "height": 32, "width": 32},
                         },
@@ -329,6 +349,7 @@ class ExperimentConfigTest(unittest.TestCase):
                 "model": {
                     "key": "m",
                     "backend": "torchvision",
+                    "detector_pretraining_dataset": "coco",
                     "model_name_or_path": "fasterrcnn_resnet50_fpn",
                     "preprocess": {"resize_mode": "letterbox", "height": 32, "width": 32},
                 },
@@ -368,6 +389,7 @@ class ExperimentConfigTest(unittest.TestCase):
                     "model": {
                         "key": "m",
                         "backend": "torchvision",
+                        "detector_pretraining_dataset": "coco",
                         "model_name_or_path": "fasterrcnn_resnet50_fpn",
                         "preprocess": {"resize_mode": "letterbox", "height": 32, "width": 32},
                     },
@@ -382,6 +404,7 @@ class ExperimentConfigTest(unittest.TestCase):
                     "model": {
                         "key": "m",
                         "backend": "torchvision",
+                        "detector_pretraining_dataset": "coco",
                         "model_name_or_path": "fasterrcnn_resnet50_fpn",
                         "preprocess": {"resize_mode": "letterbox", "height": 32, "width": 32},
                     },
@@ -396,6 +419,7 @@ class ExperimentConfigTest(unittest.TestCase):
                     "model": {
                         "key": "m",
                         "backend": "torchvision",
+                        "detector_pretraining_dataset": "coco",
                         "model_name_or_path": "fasterrcnn_resnet50_fpn",
                         "preprocess": {"resize_mode": "letterbox", "height": 32, "width": 32},
                     },
